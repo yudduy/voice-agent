@@ -15,7 +15,7 @@ const FounderPreferenceSchema = new Schema({
   callSid: {
     type: String,
     required: true,
-    unique: true, // Ensure only one preference record per call
+    unique: true, 
     index: true
   },
   

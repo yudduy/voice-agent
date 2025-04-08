@@ -4,16 +4,21 @@ const logger = require('../utils/logger');
 const callerService = require('./caller');
 const databaseService = require('./database'); // Assuming it has necessary update functions
 const monitorConfig = require('../config/monitor');
+const { formatPhoneForCalling } = require('../utils/phoneFormatter'); // Import formatter
+const { isSafeToCall } = require('../utils/phoneSafety'); // Import safety check
 
 let changeStream = null;
-let isProcessingBatch = false; // Simple flag for initial scan batching
-let monitorRestartTimeout = null; // Timeout handle for restart logic
-let isMonitorRunning = false; // Explicit state flag
+let monitorRestartTimeout = null; // Keep for restart logic
+let isMonitorRunning = false; // Keep for state
+let currentCallRate = 0; // Keep for rate limit
+let rateLimitTimer = null; // Keep for rate limit timer
+let isProcessingBatch = false; // Keep for initial scan coordination
 
 // In-memory queue for delayed calls (WARNING: Not persistent across restarts)
 const delayedCallQueue = new Map();
-let currentCallRate = 0;
-let rateLimitTimer = null;
+
+// Define cooldown period (e.g., 15 minutes)
+const CALL_COOLDOWN_MS = 15 * 60 * 1000; 
 
 /**
  * Resets the rate limit counter periodically.
@@ -25,121 +30,198 @@ const resetRateLimit = () => {
     rateLimitTimer = setTimeout(resetRateLimit, monitorConfig.rateLimitIntervalMs);
 };
 
-
 /**
- * Processes a single contact: initiates call and updates status.
+ * Processes a single contact: formats number, checks safety, initiates call.
+ * Simplified - does not manage complex monitorStatus.
  */
 const processContact = async (contact) => {
+    logger.debug('Entering processContact', { contact });
+
     if (!contact || !contact.phone || !contact._id) {
         logger.warn('Attempted to process invalid contact data', { contactId: contact?._id });
         return;
     }
 
     const contactId = contact._id;
-    const contactIdStr = contactId.toString(); // Use string for map keys
-
-    // Clean up from delayed queue if this execution originated from there
-    if (delayedCallQueue.has(contactIdStr)) {
-        clearTimeout(delayedCallQueue.get(contactIdStr).timerId);
-        delayedCallQueue.delete(contactIdStr);
-    }
+    const contactIdStr = contactId.toString(); 
+    let lockedContact = false; // Flag to track if we successfully locked
 
     try {
-        // Atomically mark as processing to prevent race conditions
-        const originalDoc = await Contact.findOneAndUpdate(
-            { _id: contactId, monitorStatus: { $in: ['pending', 'error', null] } },
-            { $set: { monitorStatus: 'processing' } },
-            { new: false } // Return the original document
-        ).lean(); // Use lean as we only check if it was found
+        // --- Atomic Lock & Cooldown Check ---
+        const now = new Date();
+        const cooldownThreshold = new Date(now.getTime() - CALL_COOLDOWN_MS);
 
-        if (!originalDoc) {
-            logger.info(`Contact already being processed or status changed, skipping`, { contactId });
-            return;
+        const lockedDoc = await Contact.findOneAndUpdate(
+            {
+                _id: contactId,
+                callInProgressSince: null, // Only lock if not already locked
+                $or: [ // Check cooldown
+                    { lastAttemptedCallAt: null },
+                    { lastAttemptedCallAt: { $lte: cooldownThreshold } }
+                ]
+            },
+            { $set: { callInProgressSince: now } }, // Lock it
+            { new: true } // Return the updated (locked) doc
+        ).lean();
+
+        if (!lockedDoc) {
+            // Could be locked by another process or called too recently
+            // Fetch current state to log reason
+            const currentState = await Contact.findById(contactId, 'callInProgressSince lastAttemptedCallAt').lean();
+            logger.info(`Skipping contact: Already locked or recently called.`, { 
+                contactId, 
+                lockedSince: currentState?.callInProgressSince,
+                lastAttempt: currentState?.lastAttemptedCallAt,
+                cooldownThreshold 
+            });
+            return; // Stop processing
         }
+        lockedContact = true; // We acquired the lock
+        logger.debug('Successfully locked contact for processing', { contactId });
+        // --- End Lock & Cooldown Check ---
+
+        // Clean up from delayed queue if this execution originated from there
+        if (delayedCallQueue.has(contactIdStr)) {
+            clearTimeout(delayedCallQueue.get(contactIdStr).timerId);
+            delayedCallQueue.delete(contactIdStr);
+        }
+
+        // Format Phone Number
+        const phoneNumberToCall = formatPhoneForCalling(contact.phone);
+        if (!phoneNumberToCall) {
+             logger.warn('Invalid phone number format after formatting', { contactId, originalPhone: contact.phone });
+             await Contact.findByIdAndUpdate(contactId, { $set: { callStatus: 'failed' }, $push: { notes: `Invalid phone format: ${contact.phone}` } });
+             return; // Stop processing
+        }
+        logger.debug('Formatted phone number', { contactId, formattedPhone: phoneNumberToCall });
+        
+        // Safety Check
+        const safetyResult = isSafeToCall(phoneNumberToCall);
+        if (!safetyResult.isSafe) {
+            logger.warn(`Phone number deemed unsafe to call: ${safetyResult.reason}`, { contactId, phone: phoneNumberToCall });
+            await Contact.findByIdAndUpdate(contactId, { $set: { callStatus: 'failed' }, $push: { notes: `Blocked call (Safety: ${safetyResult.reason})` } });
+            return; // Stop processing
+        }
+        logger.debug('Phone number passed safety check', { contactId });
 
         // Rate Limit Check
         if (currentCallRate >= monitorConfig.callsPerInterval) {
-            logger.warn(`Rate limit reached (${monitorConfig.callsPerInterval}/${monitorConfig.rateLimitIntervalMs}ms). Reverting contact status to pending.`, { contactId });
-            await Contact.findByIdAndUpdate(contactId, { $set: { monitorStatus: 'pending' } });
-            // Consider adding to a persistent retry queue or increasing delay
+            logger.warn(`Rate limit reached. Skipping call for now.`, { contactId });
+            // No status update here under the simplified model
             return;
         }
         currentCallRate++;
 
-        logger.info(`Processing contact for calling`, { contactId, phone: contact.phone, currentRate: currentCallRate });
+        logger.info(`Processing locked contact for calling`, { contactId, phone: contact.phone, currentRate: currentCallRate });
 
-        // Initiate Call
-        // Use the original document's data if available, otherwise the potentially minimal input 'contact' object
-        const contactDataForCall = originalDoc || contact;
-        await callerService.initiateCall(contactDataForCall);
+        // Initiate Call (This should update lastAttemptedCallAt on its own if successful)
+        // We need to modify initiateCall to do this
+        await callerService.initiateCall(lockedDoc); // Use the locked document data
 
-        // Mark as processed successfully
-        await Contact.findByIdAndUpdate(contactId, {
-            $set: { monitorStatus: 'processed', monitorProcessedAt: new Date() }
-        });
-        logger.info(`Successfully initiated call and marked contact as processed`, { contactId });
+        // If initiateCall succeeds, the lock is implicitly released by the call outcome/status updates.
+        // No 'processed' status update needed here in simplified model.
+        // Unlock happens automatically if initiateCall throws an error (see finally block).
+        logger.info(`Successfully initiated call for locked contact`, { contactId });
 
     } catch (error) {
-        logger.error(`Error processing contact`, { contactId, errorMessage: error.message, errorStack: error.stack });
-        // Mark as error for potential retry
+        logger.error(`Error processing locked contact`, { contactId, errorMessage: error.message, errorStack: error.stack });
+        // Mark with callStatus 'failed' (if applicable)
         try {
-            await Contact.findByIdAndUpdate(contactId, { $set: { monitorStatus: 'error' } });
+            if (contactId && mongoose.Types.ObjectId.isValid(contactId)) {
+                 await Contact.findByIdAndUpdate(contactId, { $set: { callStatus: 'failed' }, $push: { notes: `Processing/Initiation Error: ${error.message}` } });
+            } 
         } catch (updateError) {
-            logger.error(`Failed to mark contact as error after processing failure`, { contactId, updateErrorMessage: updateError.message });
+            logger.error(`Failed to mark contact callStatus as failed after processing error`, { contactId, updateErrorMessage: updateError.message });
+        }
+        // Rethrow or handle as needed
+        // throw error; 
+    } finally {
+        // --- Unlock if we locked it AND an error occurred *before* successful call initiation --- 
+        // If initiateCall succeeded, we don't unlock here.
+        // We only unlock if we got the lock (`lockedContact = true`) but initiateCall failed.
+        if (lockedContact) { 
+            try {
+                // Check if call was actually initiated by looking at lastAttempted vs lock time? Complex.
+                // Simpler: Assume if we are in `finally` after locking, and haven't explicitly succeeded,
+                // unlock it to allow retry later after cooldown. The cooldown check prevents immediate retry.
+                logger.debug('Unlocking contact in finally block after processing attempt', { contactId });
+                await Contact.findByIdAndUpdate(contactId, { $set: { callInProgressSince: null } });
+            } catch (unlockError) {
+                logger.error('CRITICAL: Failed to unlock contact in finally block!', { contactId, unlockError: unlockError.message });
+                // This could lead to a permanent lock, needs monitoring/manual intervention
+            }
         }
     }
 };
 
 /**
  * Handles a change event from MongoDB Change Stream.
+ * Simplified: Checks only for presence of a phone number.
  */
 const handleContactChange = (change) => {
-    logger.debug('Received change stream event', { operationType: change.operationType });
+    logger.debug('Received change stream event', { 
+        operationType: change.operationType,
+        documentKey: change.documentKey,
+    });
 
-    // Interested in inserts and updates/replaces that might add/change a phone or status
     if (change.operationType === 'insert' || change.operationType === 'update' || change.operationType === 'replace') {
-        // Use fullDocument if available (for updates/replaces), otherwise the document key (for inserts)
         const contactDoc = change.fullDocument || (change.operationType === 'insert' ? change.fullDocumentBeforeChange : null) || change.documentKey;
-
         if (!contactDoc || !contactDoc._id) {
-            logger.warn('Change stream event missing document data or _id', { changeId: change._id });
+             logger.warn('Change stream event missing document data or _id', { changeId: change._id });
             return;
         }
-
         const contactIdStr = contactDoc._id.toString();
 
-        // Fetch the latest full state to ensure eligibility check is accurate
-        Contact.findOne({
-            _id: contactDoc._id,
-            phone: { $exists: true, $ne: "" },
-            monitorStatus: { $in: ['pending', 'error', null] } // Check if it needs processing
-        })
+        // Fetch the contact by ID to get current data
+        Contact.findById(contactIdStr)
         .lean()
-        .then(eligibleContact => {
-            if (!eligibleContact) {
-                logger.debug('Contact from change stream event is not eligible for processing', { contactId: contactIdStr });
+        .then(fetchedContact => {
+            if (!fetchedContact) {
+                logger.warn('Contact not found after change event, likely deleted.', { contactId: contactIdStr });
                 return;
             }
+            
+            // Simplified Eligibility Check: Does it have a phone number?
+            const hasPhone = !!fetchedContact.phone && fetchedContact.phone.trim() !== "";
+            
+            if (!hasPhone) {
+                 logger.info('Contact is NOT eligible for processing (Missing/Empty Phone).', { 
+                    contactId: contactIdStr, 
+                    name: fetchedContact.name,
+                    currentPhone: fetchedContact.phone 
+                });
+                return; // Stop processing if no phone
+            }
+            
+            logger.info('Contact determined ELIGIBLE for processing (has phone number)', { 
+                contactId: contactIdStr, 
+                contactName: fetchedContact.name,
+                phone: fetchedContact.phone // Log phone being considered
+            });
+            logger.debug('Eligible contact data:', { fetchedContact });
 
+            // Proceed with processing (immediate or delayed based on config)
             if (monitorConfig.immediateCall) {
                 logger.info(`Contact change detected, processing immediately`, { contactId: contactIdStr });
-                processContact(eligibleContact); // No await needed here, process async
+                processContact(fetchedContact); // No await needed here, process async
             } else {
-                if (!delayedCallQueue.has(contactIdStr)) {
+                // Delayed logic remains the same, but eligibility was simpler
+                if (!delayedCallQueue.has(contactIdStr)) { // Assuming delayedCallQueue is still used for delay config
                     logger.info(`Contact change detected, scheduling delayed call`, { contactId: contactIdStr, delay: monitorConfig.callDelayMs });
                     const timerId = setTimeout(() => {
-                        // Fetch again right before calling in case status changed during delay
+                        // Re-fetch just before calling to ensure it still exists and has phone
                         Contact.findById(contactIdStr).lean().then(contactNow => {
-                            if (contactNow && contactNow.monitorStatus !== 'processed') {
+                            if (contactNow && contactNow.phone) {
                                  logger.info(`Executing delayed call for contact`, { contactId: contactIdStr });
                                  processContact(contactNow);
                             } else {
-                                 logger.info(`Skipping delayed call for contact, status changed during delay`, { contactId: contactIdStr });
+                                 logger.warn(`Skipping delayed call for contact, missing/deleted during delay`, { contactId: contactIdStr });
                             }
-                            delayedCallQueue.delete(contactIdStr); // Clean up after execution attempt
+                             // Ensure cleanup from map regardless of outcome inside timeout
+                             if(delayedCallQueue.has(contactIdStr)) delayedCallQueue.delete(contactIdStr);
                         }).catch(fetchErr => {
                             logger.error('Error fetching contact before delayed execution', { contactId: contactIdStr, error: fetchErr.message });
-                            delayedCallQueue.delete(contactIdStr); // Clean up on error
+                            if(delayedCallQueue.has(contactIdStr)) delayedCallQueue.delete(contactIdStr);
                         });
                     }, monitorConfig.callDelayMs);
                     delayedCallQueue.set(contactIdStr, { timerId });
@@ -156,26 +238,33 @@ const handleContactChange = (change) => {
 
 /**
  * Scans for existing contacts that need processing.
+ * Updated to respect locking and cooldown.
  */
 const scanExistingContacts = async () => {
     if (isProcessingBatch) {
         logger.info('Initial scan batch already in progress, skipping new scan.');
         return;
     }
-    logger.info('Starting initial scan for unprocessed contacts...');
-    isProcessingBatch = true; // Set flag immediately
+    logger.info('Starting initial scan for unprocessed contacts (respecting locks/cooldown)...');
+    isProcessingBatch = true; 
 
     try {
         let processedInBatch = 0;
         let hasMore = true;
+        const now = new Date();
+        const cooldownThreshold = new Date(now.getTime() - CALL_COOLDOWN_MS);
 
         while(hasMore) {
              const contactsToProcess = await Contact.find({
                 phone: { $exists: true, $ne: "" },
-                monitorStatus: { $in: ['pending', 'error', null] }
+                callInProgressSince: null, // Not currently locked
+                $or: [ // Cooldown check
+                    { lastAttemptedCallAt: null },
+                    { lastAttemptedCallAt: { $lte: cooldownThreshold } }
+                ]
             })
             .limit(monitorConfig.batchSize)
-            .sort({ createdAt: 1 }) // Process older ones first
+            .sort({ createdAt: 1 }) 
             .lean();
 
             if (contactsToProcess.length === 0) {
@@ -183,28 +272,25 @@ const scanExistingContacts = async () => {
                 break;
             }
 
-            logger.info(`Found ${contactsToProcess.length} contacts in current batch.`);
+            logger.info(`Found ${contactsToProcess.length} contacts in current scan batch.`);
 
             for (const contact of contactsToProcess) {
-                // Await processing to respect rate limits more effectively during scan
                 await processContact(contact);
                 processedInBatch++;
-                // Optional small delay between calls in batch to spread load
-                await new Promise(resolve => setTimeout(resolve, 100));
+                await new Promise(resolve => setTimeout(resolve, 100)); 
             }
 
-            // If we fetched less than the batch size, we're done
             if (contactsToProcess.length < monitorConfig.batchSize) {
                 hasMore = false;
             }
         } // end while
 
-        logger.info(`Initial scan completed. Processed approx ${processedInBatch} contacts.`);
+        logger.info(`Initial scan completed. Attempted processing for approx ${processedInBatch} contacts.`);
 
     } catch (error) {
         logger.error('Error during initial contact scan', { errorMessage: error.message, errorStack: error.stack });
     } finally {
-        isProcessingBatch = false; // Release flag
+        isProcessingBatch = false; 
     }
 };
 
@@ -327,8 +413,19 @@ const resetWatcher = async () => {
     attemptStartWatcher(true); // Force start
 };
 
+/**
+ * Returns the current running state of the monitor.
+ * @returns {boolean}
+ */
+const getIsMonitorRunning = () => {
+    // Check both the flag and the actual changeStream object state
+    return isMonitorRunning && changeStream !== null;
+};
+
 module.exports = {
-    startWatcher: attemptStartWatcher, // Export the robust start function
+    startWatcher: attemptStartWatcher,
     stopWatcher,
-    resetWatcher // Export the new reset function
+    resetWatcher,
+    getIsMonitorRunning,
+    processContact // Export processContact if needed by direct endpoint
 };

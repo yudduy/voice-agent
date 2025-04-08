@@ -32,8 +32,38 @@ const connectToDatabase = async () => {
           collections: collections.map(c => c.name)
         });
 
-        const contactCount = await Contact.countDocuments();
-        logger.info('Contact count check:', { count: contactCount });
+        // --- Check specific collection counts ---
+        const db = mongoose.connection.db;
+        let actualContactCount = 0;
+        let legacyContactCount = 0;
+        
+        try {
+            // Count documents in the collection the model is CONFIGURED for ('contacts')
+            actualContactCount = await Contact.countDocuments();
+            logger.info(`Document count in configured collection ('${Contact.collection.name}'):`, { count: actualContactCount });
+            if (actualContactCount === 0) {
+                logger.warn(`Configured collection '${Contact.collection.name}' is empty. Ensure data source (Slack Bot) is writing here.`);
+            }
+        } catch (countError) {
+            logger.error(`Error counting documents in configured collection ('${Contact.collection.name}')`, { error: countError.message });
+        }
+        
+        try {
+            // Explicitly check the count in the 'foundess.contacts' collection (potential incorrect location)
+            const incorrectCollectionExists = collections.some(c => c.name === 'foundess.contacts');
+            if (incorrectCollectionExists) {
+                legacyContactCount = await db.collection('foundess.contacts').countDocuments();
+                if (legacyContactCount > 0) {
+                    logger.warn(`Data found in INCORRECT collection 'foundess.contacts'!`, { count: legacyContactCount });
+                    logger.warn(`Application is configured for '${Contact.collection.name}'. Consider migrating data or reconfiguring external sources.`);
+                }
+            } else {
+                 logger.info("Collection 'foundess.contacts' not found (as expected).");
+            }
+        } catch (legacyCountError) {
+            logger.error("Error counting documents in 'foundess.contacts' collection", { error: legacyCountError.message });
+        }
+        // --- End collection count check ---
 
       } catch (diagError) {
         logger.error('Error during diagnostic checks (listing collections/counting contacts)', { diagError: diagError.message });

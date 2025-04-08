@@ -15,145 +15,183 @@ const telephonyConfig = require('../config/telephony');
 const Call = require('../models/call');
 const Contact = require('../models/contact');
 const mongoose = require('mongoose');
+const contactMonitor = require('../services/contactMonitor'); // Import monitor service
+const { formatPhoneForCalling } = require('../utils/phoneFormatter'); // Import formatter
+const { isSafeToCall } = require('../utils/phoneSafety'); // Import safety check
 
 /**
  * Webhook called when call is connected
  */
 router.post('/connect', async (req, res) => {
   const callSid = req.body.CallSid;
-  const toPhoneNumber = req.body.To; // Get the number called
+  const toPhoneNumber = req.body.To;
   
+  // --- Log Incoming Request --- 
+  logger.info('[/connect] Received request from Twilio', {
+      callSid,
+      to: req.body.To,
+      from: req.body.From,
+      callStatus: req.body.CallStatus,
+      // Log other potentially useful fields from req.body if needed
+      // requestBody: req.body // Uncomment for full request body if debugging complex issues
+  });
+  // --- End Request Logging ---
+
   try {
-    logger.info('Call connected', { callSid, toPhoneNumber });
     const response = new VoiceResponse();
-    
-    // Try to find the call record
-    let call = await Call.findOne({ callSid }).exec();
-    let contact;
+    let contact = null; // Initialize contact in the outer scope
     let isTestCall = false;
+    let call = null; // Initialize call in the outer scope
+
+    logger.debug('[/connect] Finding call record...', { callSid });
+    call = await Call.findOne({ callSid }).exec(); // Assign to outer scope variable
 
     if (!call) {
-      logger.warn('Call record not found initially. Checking if its a test call.', { callSid, toPhoneNumber });
-      // Attempt to find contact by the phone number that was called
-      // Normalize phone number from request if necessary (e.g., remove +)
+      logger.warn('[/connect] Call record not found initially. Checking DB for contact by phone...', { callSid, toPhoneNumber });
       const normalizedToPhone = toPhoneNumber.startsWith('+') ? toPhoneNumber.substring(1) : toPhoneNumber;
-      const potentialContact = await Contact.findOne({ phone: { $regex: normalizedToPhone + '$' } }).exec(); // Match ending with number
+      logger.debug('[/connect] Finding potential contact by phone...', { normalizedToPhone });
+      const potentialContact = await Contact.findOne({ phone: { $regex: normalizedToPhone + '$' } }).exec(); 
 
       if (potentialContact) {
-        // Found a contact but no Call record - likely a race condition or creation error
-        logger.error('Found contact but no call record. Possible DB issue.', { callSid, contactId: potentialContact._id });
-        response.say('We\'re sorry, there was an internal error processing this call. Goodbye.');
+        // Found a contact but no Call record - this is the error state we saw!
+        logger.error('[/connect] Data Integrity Error: Found contact by phone but NO matching call record.', { 
+            callSid, 
+            contactId: potentialContact._id 
+        });
+        // Send specific error TwiML and stop
+        response.say('We\'re sorry, there was an issue linking this call to your record. Please contact support.');
         response.hangup();
         res.type('text/xml');
-        return res.send(response.toString());
+        return res.status(500).send(response.toString()); // STOP execution
       } else {
-        // No Call record and no matching Contact found - treat as a test call
-        logger.info('Proceeding as a temporary test call (no DB record).', { callSid });
+        // No Call record AND no matching Contact found - treat as a temporary test call
+        logger.info('[/connect] Proceeding as temporary test call (no DB record or matching contact).', { callSid });
         isTestCall = true;
-        // Create a temporary contact object for this call flow
+        // Assign to the outer scope contact variable
         contact = {
-          _id: `test-${callSid}`, // Use callSid to make it unique but identifiable
+          _id: `test-${callSid}`,
           name: 'Test User',
           phone: toPhoneNumber
         };
       }
     } else {
-      // Call record found, proceed to find contact via contactId
-      contact = await Contact.findById(call.contactId).exec();
+      // Call record WAS found. Now find the linked contact.
+      const linkedContactId = call.contactId;
+      logger.debug('[/connect] Call record found. Finding linked contact...', { callSid, contactId: linkedContactId });
+      
+      // Assign to the outer scope contact variable
+      contact = await Contact.findById(linkedContactId).exec();
+      
       if (!contact) {
-        // Call record exists but linked contact doesn't - data integrity issue
-        logger.error('Call record found, but linked contact not found in DB.', { callSid, contactId: call.contactId });
-        response.say('We\'re sorry, there was an error retrieving call details. Goodbye.');
+        // If the linked contact is NOT found - data integrity issue.
+        logger.error('[/connect] Data Integrity Error: Call record found, but linked contact missing in DB.', { 
+            callSid, 
+            searchedContactId: linkedContactId 
+        });
+        response.say('We\'re sorry, there was an issue retrieving your details for this call. Please contact support.');
         response.hangup();
         res.type('text/xml');
-        return res.send(response.toString());
+        return res.status(500).send(response.toString()); // STOP execution
       }
+      logger.debug('[/connect] Linked contact found successfully.', { contactId: contact._id });
     }
     
-    // --- Call Processing Logic (common for real and test calls) ---
-    
-    // Update call status only if it's not a test call
-    if (!isTestCall) {
+    // --- Call Processing Logic --- 
+    // If execution reaches here, the 'contact' variable MUST be populated (either real or temporary)
+    logger.debug('[/connect] Starting full call processing logic', { callSid, isTestCall, contactId: contact?._id }); // Log contact ID
+
+    logger.debug('[/connect] Updating call status (if not test call)...', { callSid });
+    if (!isTestCall && call) { // Ensure call record exists for status update
       await databaseService.updateCallStatus(callSid, 'in-progress');
     }
     
-    // Initialize conversation (works for both real and temp contact objects)
-    conversationService.initializeConversation(callSid, contact);
+    // Initialize conversation directly
+    logger.debug('[/connect] Initializing conversation...', { callSid });
+    conversationService.initializeConversation(callSid, contact); 
     
-    // Initialize transcript only if it's not a test call
-    if (!isTestCall && contact._id) {
-       // Ensure contact._id is valid before initializing transcript
-       if (mongoose.Types.ObjectId.isValid(contact._id)) {
-         await transcriptService.initializeTranscript(callSid, contact._id);
-       } else {
-         logger.warn('Skipping transcript initialization due to invalid contact ID format', { callSid, contactId: contact._id });
+    logger.debug('[/connect] Initializing transcript (if not test call)...', { callSid });
+    // Ensure contactId is valid before initializing transcript
+    if (!isTestCall && contact._id && mongoose.Types.ObjectId.isValid(contact._id)) {
+       try {
+           await transcriptService.initializeTranscript(callSid, contact._id);
+       } catch (transcriptError) {
+           logger.error('[/connect] Error initializing transcript', { callSid, contactId: contact._id, error: transcriptError.message });
+           // Decide if this is fatal or just log and continue?
+           // For now, log and continue.
        }
+    } else if (!isTestCall) {
+        logger.warn('[/connect] Skipping transcript initialization due to invalid/missing contact ID', { callSid, contactId: contact?._id });
     }
     
-    // Get initial greeting (works for both real and temp contact objects)
-    const greeting = conversationService.getInitialGreeting(contact);
+    logger.debug('[/connect] Getting initial greeting...', { callSid });
+    const greeting = conversationService.getInitialGreeting(contact); // Pass the found/created contact
     
-    // Format for speech
+    logger.debug('[/connect] Formatting greeting for speech...', { callSid });
     const formattedGreeting = textToSpeech.formatTextForSpeech(greeting);
     
-    // Add to transcript only if it's not a test call
-    if (!isTestCall) {
-      await transcriptService.addTranscriptEntry(callSid, 'assistant', greeting);
+     logger.debug('[/connect] Adding greeting to transcript (if not test call)...', { callSid });
+    if (!isTestCall && contact._id && mongoose.Types.ObjectId.isValid(contact._id)) {
+        try {
+            await transcriptService.addTranscriptEntry(callSid, 'assistant', greeting);
+        } catch (transcriptError) {
+            logger.error('[/connect] Error adding greeting to transcript', { callSid, error: transcriptError.message });
+        }
+    } else if (!isTestCall) {
+         logger.warn('[/connect] Skipping adding greeting to transcript due to invalid/missing contact ID', { callSid, contactId: contact?._id });
     }
     
-    // Start the conversation
+    logger.debug('[/connect] Generating full TwiML...', { callSid });
+    // --- Original TwiML Generation --- 
     response.say({
-      voice: telephonyConfig.voice,
+      voice: telephonyConfig.voice || 'Polly.Joanna', // Use config, provide default
     }, formattedGreeting);
     
-    // Listen for user response
     response.gather({
       input: ['speech'],
-      speechTimeout: telephonyConfig.speechTimeout,
-      speechModel: telephonyConfig.speechModel,
+      speechTimeout: telephonyConfig.speechTimeout || 'auto',
+      speechModel: telephonyConfig.speechModel || 'phone_call',
       action: '/api/calls/respond',
       method: 'POST',
-      language: telephonyConfig.language,
+      language: telephonyConfig.language || 'en-US',
     });
     
-    // If no input is received, prompt again
-    response.say({
-      voice: telephonyConfig.voice,
-    }, 'I didn\'t hear anything. Can you please speak again?');
-    
+    // Fallback if first gather fails
+    response.say({ voice: telephonyConfig.voice || 'Polly.Joanna' }, 'I didn\'t hear anything. Can you please speak again?');
     response.gather({
-      input: ['speech'],
-      speechTimeout: telephonyConfig.speechTimeout,
-      speechModel: telephonyConfig.speechModel,
-      action: '/api/calls/respond',
-      method: 'POST',
-      language: telephonyConfig.language,
+       input: ['speech'],
+       speechTimeout: telephonyConfig.speechTimeout || 'auto',
+       speechModel: telephonyConfig.speechModel || 'phone_call',
+       action: '/api/calls/respond',
+       method: 'POST',
+       language: telephonyConfig.language || 'en-US',
     });
     
-    // If still no input, end the call gracefully
-    response.say({
-      voice: telephonyConfig.voice,
-    }, "I'm sorry, but I still can't hear you. I'll have someone from our team call you back soon. Thank you!");
-    
+    // Fallback if second gather fails
+    response.say({ voice: telephonyConfig.voice || 'Polly.Joanna' }, 'I\'m sorry, but I still can\'t hear you. I\'ll have someone from our team call you back soon. Thank you!');
     response.hangup();
+    // --- End Original TwiML Generation --- 
+    
+    const twimlString = response.toString();
+    logger.debug('[/connect] Sending TwiML:', { twiml: twimlString }); // Log TwiML
     
     res.type('text/xml');
-    res.send(response.toString());
+    res.send(twimlString);
+
   } catch (error) {
-    logger.error('Error in /connect webhook', {
-      callSid,
-      errorMessage: error.message,
-      errorType: error.constructor.name,
-      errorStack: error.stack
+    // Log error in detail
+    logger.error('[Connect Webhook Error - TwiML Generation Phase]', { 
+      callSid, 
+      errorMessage: error.message, 
+      errorType: error.constructor.name, 
+      errorStack: error.stack 
     });
     
-    // Fallback response
-    const response = new VoiceResponse();
-    response.say('We\'re sorry, there was an error with this call. Please try again later.');
-    response.hangup();
-    
+    // Send back a minimal valid TwiML error response
+    const fallbackResponse = new VoiceResponse();
+    fallbackResponse.say('An application error occurred during call setup. Goodbye.');
+    fallbackResponse.hangup();
     res.type('text/xml');
-    res.send(response.toString());
+    res.status(500).send(fallbackResponse.toString()); 
   }
 });
 
@@ -194,11 +232,11 @@ router.post('/respond', async (req, res) => {
     // Process speech result
     const processedInput = speechToText.processTwilioSpeechResult(userInput);
     
-    // Get AI response
-    const aiResponse = await conversationService.getResponse(processedInput, callSid);
+    // Get AI response (now returns an object)
+    const { text: aiResponseText, shouldHangup } = await conversationService.getResponse(processedInput, callSid);
     
     // Ensure we have a valid response before proceeding
-    if (!aiResponse || aiResponse.trim().length === 0) {
+    if (!aiResponseText || aiResponseText.trim().length === 0) {
       logger.warn('Received empty AI response', { callSid });
       // Ask user to repeat or indicate an issue
       response.say({
@@ -218,70 +256,77 @@ router.post('/respond', async (req, res) => {
       return res.send(response.toString());
     }
     
-    // Format for speech
-    const formattedResponse = textToSpeech.formatTextForSpeech(aiResponse);
+    // Format for speech - Use a different name to avoid conflict
+    const formattedAiText = textToSpeech.formatTextForSpeech(aiResponseText);
     
     // Check if response needs to be split (Twilio has limits)
-    const responseChunks = textToSpeech.splitIntoSpeechChunks(formattedResponse);
+    const responseChunks = textToSpeech.splitIntoSpeechChunks(formattedAiText);
     
     // Speak the AI response
     responseChunks.forEach(chunk => {
       response.say({
-        voice: telephonyConfig.voice,
+        voice: telephonyConfig.voice || 'Polly.Joanna',
       }, chunk);
     });
     
-    // Continue the conversation
-    response.gather({
-      input: ['speech'],
-      speechTimeout: telephonyConfig.speechTimeout,
-      speechModel: telephonyConfig.speechModel,
-      action: '/api/calls/respond',
-      method: 'POST',
-      language: telephonyConfig.language,
-    });
+    // --- Decide whether to Hangup or Gather --- 
+    if (shouldHangup) {
+        logger.info('[/respond] AI indicated hangup. Ending call.', { callSid });
+        response.hangup();
+    } else {
+        logger.debug('[/respond] AI did not indicate hangup. Gathering next input.', { callSid });
+        // Continue the conversation: Gather next input
+        response.gather({
+          input: ['speech'],
+          speechTimeout: telephonyConfig.speechTimeout || 'auto',
+          speechModel: telephonyConfig.speechModel || 'phone_call',
+          action: '/api/calls/respond',
+          method: 'POST',
+          language: telephonyConfig.language || 'en-US',
+        });
+        
+        // Fallback if gather fails (optional, could be removed if hangup logic is reliable)
+        response.say({ voice: telephonyConfig.voice || 'Polly.Joanna' }, 'Are you still there? Could you please respond?');
+        response.gather({
+           input: ['speech'],
+           speechTimeout: telephonyConfig.speechTimeout || 'auto',
+           speechModel: telephonyConfig.speechModel || 'phone_call',
+           action: '/api/calls/respond',
+           method: 'POST',
+           language: telephonyConfig.language || 'en-US',
+        });
+        
+        // Final fallback before hangup if still no input
+        response.say({ voice: telephonyConfig.voice || 'Polly.Joanna' }, 'I\'m sorry, but I haven\'t heard from you. I\'ll have someone from our team follow up with you soon. Thank you for your time!');
+        response.hangup();
+    }
+    // --- End Hangup/Gather Decision ---
     
-    // If no input is received, prompt again
-    response.say({
-      voice: telephonyConfig.voice,
-    }, 'Are you still there? Could you please respond?');
-    
-    response.gather({
-      input: ['speech'],
-      speechTimeout: telephonyConfig.speechTimeout,
-      speechModel: telephonyConfig.speechModel,
-      action: '/api/calls/respond',
-      method: 'POST',
-      language: telephonyConfig.language,
-    });
-    
-    // If still no input, end the call gracefully
-    response.say({
-      voice: telephonyConfig.voice,
-    }, 'I\'m sorry, but I haven\'t heard from you. I\'ll have someone from our team follow up with you soon. Thank you for your time!');
-    
-    response.hangup();
-    
+    const twimlString = response.toString();
+    logger.debug('[/respond] Sending TwiML:', { twiml: twimlString });
+
     res.type('text/xml');
-    res.send(response.toString());
+    res.send(twimlString);
+
   } catch (error) {
-    logger.error('Error in /respond webhook', {
-      callSid,
+    logger.error('[Respond Webhook Error]', { 
+      callSid, 
+      userInput: req.body.SpeechResult ? req.body.SpeechResult.substring(0,30) + '...' : 'N/A',
       errorMessage: error.message,
       errorType: error.constructor.name,
       errorStack: error.stack
     });
     
     // Fallback response
-    const response = new VoiceResponse();
-    response.say({
-      voice: telephonyConfig.voice,
-    }, 'I\'m sorry, I\'m having some technical difficulties. I\'ll have someone from our team call you back. Thank you!');
-    
-    response.hangup();
+    const fallbackResponse = new VoiceResponse();
+    fallbackResponse.say({
+        voice: telephonyConfig.voice, // Use configured voice if possible
+      }, "I'm sorry, an internal error occurred. We will follow up shortly. Thank you.");
+    fallbackResponse.hangup();
     
     res.type('text/xml');
-    res.send(response.toString());
+     // Send the fallback response
+    res.status(500).send(fallbackResponse.toString());
   }
 });
 
@@ -317,8 +362,31 @@ router.post('/status', async (req, res) => {
           });
         }
       });
+      
+      // --- Delete contact after successful completion and analysis trigger ---
+      // Ensure we have the contact ID before attempting deletion
+      const contactIdToDelete = updatedCall.contactId;
+      if (contactIdToDelete && mongoose.Types.ObjectId.isValid(contactIdToDelete)) {
+          logger.info(`Attempting to delete contact record after completed call`, { contactId: contactIdToDelete, callSid });
+          // Run deletion in background, don't need to wait for it
+          Contact.findByIdAndDelete(contactIdToDelete)
+              .then(deletedContact => {
+                  if (deletedContact) {
+                      logger.info(`Successfully deleted contact record`, { contactId: contactIdToDelete, callSid });
+                  } else {
+                      logger.warn(`Contact record not found for deletion, may have been deleted already`, { contactId: contactIdToDelete, callSid });
+                  }
+              })
+              .catch(deleteError => {
+                  logger.error(`Error deleting contact record after call completion`, { contactId: contactIdToDelete, callSid, error: deleteError.message });
+              });
+      } else {
+           logger.warn(`Cannot delete contact after call completion - Invalid or missing contactId in call record`, { callSid, contactId: contactIdToDelete });
+      }
+      // --- End contact deletion --- 
+
     } else if (callStatus === 'completed' && !updatedCall) {
-        logger.warn('Call completed but no call record found in DB to analyze.', { callSid });
+        logger.warn('Call completed but no call record found in DB to analyze or delete contact.', { callSid });
     }
     
     // Clean up resources if call ended (regardless of analysis)
@@ -417,6 +485,178 @@ router.post('/test', async (req, res) => {
     logger.error('Error in test endpoint', error);
     res.status(500).json({ error: error.message });
   }
+});
+
+/**
+ * Directly initiates a call to a specific contact, bypassing monitor eligibility checks.
+ * Includes basic safety validation.
+ * USE WITH CAUTION - intended for debugging/manual intervention.
+ */
+router.post('/direct/:contactId', async (req, res) => {
+    const { contactId } = req.params;
+    logger.info(`Direct call requested for contactId: ${contactId}`);
+
+    // Security/Environment Check (adjust as needed)
+    if (process.env.NODE_ENV === 'production') {
+        return res.status(403).json({ message: 'Direct call endpoint disabled in production.' });
+    }
+    
+    // 1. Validate Contact ID format
+    if (!mongoose.Types.ObjectId.isValid(contactId)) {
+        logger.warn('Invalid contactId format provided for direct call', { contactId });
+        return res.status(400).json({ error: 'Invalid contactId format.' });
+    }
+    
+    try {
+        // 2. Fetch Contact
+        const contact = await Contact.findById(contactId).lean();
+        if (!contact) {
+            logger.warn('Contact not found for direct call', { contactId });
+            return res.status(404).json({ error: 'Contact not found.' });
+        }
+        if (!contact.phone) {
+             logger.warn('Contact found but has no phone number', { contactId });
+            return res.status(400).json({ error: 'Contact has no phone number.' });
+        }
+
+        // 3. Format Phone Number
+        const phoneNumberToCall = formatPhoneForCalling(contact.phone);
+        if (!phoneNumberToCall) {
+            logger.error('Invalid phone number format for direct call', { contactId, originalPhone: contact.phone });
+            return res.status(400).json({ error: `Invalid phone number format: ${contact.phone}` });
+        }
+
+        // 4. Safety Check
+        const safetyResult = isSafeToCall(phoneNumberToCall);
+        if (!safetyResult.isSafe) {
+            logger.warn(`Direct call blocked - phone number deemed unsafe: ${safetyResult.reason}`, { contactId, phone: phoneNumberToCall });
+            return res.status(400).json({ error: `Call blocked for safety reasons: ${safetyResult.reason}` });
+        }
+
+        logger.info('Contact found and number safe, attempting direct call initiation...', { contactId, phone: phoneNumberToCall });
+
+        // 5. Initiate Call (using callerService)
+        // Note: callerService.initiateCall already has its own error handling (incl. Twilio trial checks)
+        const call = await callerService.initiateCall(contact); // Pass the full contact object
+        
+        res.status(200).json({ 
+            message: 'Direct call initiated successfully.', 
+            callSid: call.sid, // Assuming initiateCall returns the Twilio call object
+            contactId: contactId,
+            phoneCalled: phoneNumberToCall
+        });
+
+    } catch (error) {
+        // Catch errors from findById, initiateCall, etc.
+        logger.error('Error during direct call initiation', { 
+            contactId, 
+            errorMessage: error.message, 
+            errorStack: error.stack 
+        });
+        // Provide a generic error to the client
+        res.status(500).json({ message: 'Failed to initiate direct call due to an internal error.', error: error.message });
+    }
+});
+
+/**
+ * Endpoint to directly process a contact by ID, bypassing monitor eligibility checks.
+ * Useful for testing and manual triggering.
+ */
+router.post('/contacts/:contactId/process', async (req, res) => {
+    const { contactId } = req.params;
+    logger.info(`Direct processing requested for contactId: ${contactId}`);
+
+    // Optional: Security/Environment Check
+    if (process.env.NODE_ENV === 'production') {
+        return res.status(403).json({ message: 'Direct processing endpoint disabled in production.' });
+    }
+
+    if (!mongoose.Types.ObjectId.isValid(contactId)) {
+        return res.status(400).json({ error: 'Invalid contactId format.' });
+    }
+
+    try {
+        const contact = await Contact.findById(contactId);
+        if (!contact) {
+            return res.status(404).json({ error: 'Contact not found.' });
+        }
+        
+        logger.info('Contact found, attempting direct processing...', { contactId, name: contact.name });
+
+        // Call processContact directly (includes safety checks)
+        // processContact handles its own error logging and status updates
+        await contactMonitor.processContact(contact.toObject()); // Pass plain object
+
+        // Fetch updated status to return
+        const updatedContact = await Contact.findById(contactId, 'monitorStatus callStatus lastCallSid notes').lean();
+
+        res.status(200).json({ 
+            message: 'Direct processing initiated.',
+            contactId: contactId,
+            // Return current status after processing attempt
+            statusInfo: updatedContact || { error: 'Could not fetch updated status' }
+        });
+
+    } catch (error) {
+        logger.error('Error during direct contact processing request', { 
+            contactId, 
+            errorMessage: error.message, 
+            errorStack: error.stack 
+        });
+        res.status(500).json({ message: 'Failed to initiate direct processing due to an internal error.', error: error.message });
+    }
+});
+
+// --- Debugging/Utility Endpoints ---
+
+/**
+ * Manually trigger a rescan of existing contacts by the monitor service.
+ * (Use with caution in production)
+ */
+router.post('/force-rescan', async (req, res) => {
+    // Optional: Add security/environment check
+    if (process.env.NODE_ENV === 'production') {
+        return res.status(403).json({ message: 'Endpoint disabled in production.' });
+    }
+    try {
+        logger.info('Manual force-rescan requested.');
+        // Assuming scanExistingContacts is exposed or part of startWatcher logic
+        // Forcing a reset is often the easiest way to trigger scan
+        if (contactMonitor.resetWatcher) {
+            await contactMonitor.resetWatcher();
+            res.status(200).json({ message: 'Monitor reset initiated, scan will run.' });
+        } else {
+             logger.warn('resetWatcher function not found on contactMonitor service.');
+             res.status(500).json({ message: 'Monitor service does not support reset.' });
+        }
+    } catch (error) {
+        logger.error('Error during manual force-rescan', { error: error.message });
+        res.status(500).json({ message: 'Failed to trigger rescan.' });
+    }
+});
+
+/**
+ * Get the current status of the contact monitor service.
+ */
+router.get('/monitor-status', (req, res) => {
+    // Optional: Add security/environment check
+     if (process.env.NODE_ENV === 'production') {
+        return res.status(403).json({ message: 'Endpoint disabled in production.' });
+    }
+    try {
+        // Need to expose status from contactMonitor - adding a simple check for now
+        // A more robust approach would involve adding a getStatus() method to contactMonitor
+        const isRunning = contactMonitor.getIsMonitorRunning ? contactMonitor.getIsMonitorRunning() : false;
+        const config = require('../config/monitor');
+        res.status(200).json({
+            monitorEnabled: config.enabled,
+            isWatcherCurrentlyRunning: isRunning, // Use the getter function
+            // Add more details if available from contactMonitor
+        });
+    } catch (error) {
+         logger.error('Error retrieving monitor status', { error: error.message });
+         res.status(500).json({ message: 'Failed to get monitor status.' });
+    }
 });
 
 module.exports = router;

@@ -66,11 +66,20 @@ const ContactSchema = new Schema({
   },
   monitorProcessedAt: {
     type: Date
+  },
+  // --- Locking & Cooldown Fields ---
+  lastAttemptedCallAt: { // Timestamp of the last time a call was initiated/attempted
+    type: Date,
+    index: true
+  },
+  callInProgressSince: { // Timestamp indicating a call process has locked this contact
+    type: Date,
+    default: null,
+    index: true // Index to quickly find unlocked contacts
   }
 }, {
   timestamps: true
 });
 
-// Set up existing collection name to match the Slack bot's collection
-// Ensure this matches the actual collection name in MongoDB
+// Set up existing collection name to match the actual data location from Slack Bot
 module.exports = mongoose.model('Contact', ContactSchema, 'contacts');

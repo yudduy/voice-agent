@@ -1,6 +1,7 @@
 /**
  * Utility for formatting phone numbers.
  */
+const logger = require('./logger'); // Import the logger
 
 /**
  * Formats a phone number for international calling (E.164 standard).
@@ -16,28 +17,39 @@ const formatPhoneForCalling = (phoneNumber, defaultCountryCode = '1') => {
     return null; // Invalid input
   }
 
-  // Remove all non-numeric characters except a potential leading '+'
-  let digitsOnly = phoneNumber.trim().replace(/[^+\d]/g, '');
-
-  // Remove leading '+' for initial processing
-  const hasPlus = digitsOnly.startsWith('+');
-  if (hasPlus) {
-    digitsOnly = digitsOnly.substring(1);
+  // Remove common formatting characters: spaces, (), -, .
+  const cleaned = phoneNumber.trim().replace(/[\s\(\)\-\.]/g, '');
+  
+  // Separate potential leading + from digits
+  let digitsOnly = cleaned;
+  let hasPlus = false;
+  if (cleaned.startsWith('+')) {
+    hasPlus = true;
+    digitsOnly = cleaned.substring(1);
+  }
+  
+  // Basic validation: Ensure remaining characters are digits
+  if (!/^\d+$/.test(digitsOnly)) {
+    logger.warn('Phone number contains invalid characters after cleaning', { original: phoneNumber, cleaned: cleaned });
+    return null;
   }
 
-  // Add default country code if it looks like a 10-digit US/Canada number
-  // This is a simplification; more robust libraries exist for complex international formatting.
-  if (digitsOnly.length === 10 && defaultCountryCode === '1') {
+  // Add default country code if it looks like a 10-digit US/Canada number AND no plus was present
+  if (digitsOnly.length === 10 && !hasPlus && defaultCountryCode === '1') {
+    logger.debug('Adding default country code +1 to 10-digit number', { original: phoneNumber, digits: digitsOnly });
     digitsOnly = `${defaultCountryCode}${digitsOnly}`;
   }
   
-  // Basic validation: check if it has a reasonable length after cleanup
-  if (digitsOnly.length < 10) { // Arbitrary minimum length for international numbers
+  // Basic length check (adjust min/max as needed for your target regions)
+  if (digitsOnly.length < 10 || digitsOnly.length > 15) { 
+      logger.warn('Phone number has invalid length after formatting', { original: phoneNumber, finalDigits: digitsOnly, length: digitsOnly.length });
       return null;
   }
 
-  // Ensure '+' prefix
-  return `+${digitsOnly}`;
+  // Ensure '+' prefix is present
+  const finalNumber = `+${digitsOnly}`;
+  logger.debug('Formatted phone number result', { original: phoneNumber, formatted: finalNumber });
+  return finalNumber;
 };
 
 module.exports = {

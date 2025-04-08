@@ -45,7 +45,23 @@ const initiateCall = async (contact) => {
       formattedPhone: phoneNumberToCall
     });
     
+    // --- Update Last Attempt Time BEFORE calling Twilio ---
+    try {
+        if (contactId && mongoose.Types.ObjectId.isValid(contactId)) {
+            await Contact.findByIdAndUpdate(contactId, { $set: { lastAttemptedCallAt: new Date() } });
+            logger.debug('Updated lastAttemptedCallAt before initiating call', { contactId });
+        } else {
+            logger.warn('Skipping lastAttemptedCallAt update due to invalid contactId', { contactId });
+        }
+    } catch(updateError) {
+         // Log error but proceed with call attempt anyway?
+         // If this fails, the cooldown might not work correctly.
+         logger.error('Failed to update lastAttemptedCallAt before calling', { contactId, error: updateError.message });
+    }
+    // --- End Update Last Attempt --- 
+    
     // Make the call using Twilio
+    logger.debug('[initiateCall] Creating Twilio call...', { contactId, to: phoneNumberToCall, from: telephonyConfig.phoneNumber });
     const call = await client.calls.create({
       url: `${telephonyConfig.webhookBaseUrl}/api/calls/connect`, 
       to: phoneNumberToCall,
@@ -58,23 +74,51 @@ const initiateCall = async (contact) => {
       recordingStatusCallback: `${telephonyConfig.webhookBaseUrl}/api/calls/recording`
     });
     
-    logger.info(`Call initiated`, { callSid: call.sid });
+    logger.info(`[initiateCall] Twilio call initiated successfully`, { callSid: call.sid });
     
-    // Check if the contact ID is a valid MongoDB ObjectId before attempting DB updates
-    const isRealContact = mongoose.Types.ObjectId.isValid(contact._id);
-    
-    if (isRealContact) {
-      // Update contact with call info
-      await databaseService.updateContactCallStatus(contact._id, 'initiated', call.sid);
-      
-      // Create a new call record in the database
-      await databaseService.createCallRecord({
-        contactId: contact._id,
+    // --- Create Call Record in DB ---
+    const callRecordData = {
+        contactId: contactId, // Ensure this is the valid ObjectId
         callSid: call.sid,
-        status: 'initiated'
-      });
-    } else {
-      logger.info(`Skipping database updates for temporary test contact`, { contactId: contact._id });
+        status: 'initiated' // Initial status
+    };
+    try {
+        logger.debug('[initiateCall] Attempting to create call record in database...', { callRecordData });
+        const newCallRecord = await databaseService.createCallRecord(callRecordData);
+        if (newCallRecord) {
+             logger.info('[initiateCall] Successfully created call record in database.', { callSid: call.sid, dbRecordId: newCallRecord._id });
+        } else {
+             // This case shouldn't happen if createCallRecord throws errors, but good to check
+             logger.error('[initiateCall] createCallRecord returned null/undefined unexpectedly.', { callSid: call.sid });
+        }
+    } catch (dbError) {
+        logger.error('[initiateCall] CRITICAL: Failed to create call record in database!', { 
+            callSid: call.sid, 
+            contactId: contactId, 
+            error: dbError.message, 
+            stack: dbError.stack 
+        });
+        // Decide how to handle: throw error? Log and continue? 
+        // If we continue, subsequent status updates will fail.
+        // Let's throw to make the failure explicit.
+        throw new Error(`Failed to create database record for call ${call.sid}: ${dbError.message}`);
+    }
+    // --- End Create Call Record --- 
+
+    // Update contact callStatus (this updates the Contact, not the Call record)
+    // This seems redundant if createCallRecord links the call, maybe remove?
+    // Let's keep it for now, but ensure it handles errors.
+    try {
+        logger.debug('[initiateCall] Attempting to update contact call status...', { contactId, status: 'initiated', callSid: call.sid });
+        await databaseService.updateContactCallStatus(contactId, 'initiated', call.sid);
+        logger.info('[initiateCall] Successfully updated contact call status.', { contactId });
+    } catch(contactUpdateError) {
+         logger.error('[initiateCall] Failed to update contact call status after initiating call', { 
+            contactId: contactId, 
+            callSid: call.sid,
+            error: contactUpdateError.message 
+        });
+        // Don't throw here, the call is already initiated.
     }
     
     return call;
