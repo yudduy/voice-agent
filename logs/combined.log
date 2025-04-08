@@ -1,0 +1,444 @@
+{"level":"info","message":"Connected to MongoDB successfully","service":"foundess-caller","timestamp":"2025-04-07 10:58:15"}
+{"level":"info","message":"Connected to MongoDB successfully","service":"foundess-caller","timestamp":"2025-04-07 13:13:53"}
+{"level":"info","message":"Setting up automated call scheduler","service":"foundess-caller","timestamp":"2025-04-07 13:13:53"}
+{"level":"info","message":"Foundess Caller application started successfully","service":"foundess-caller","timestamp":"2025-04-07 13:13:53"}
+{"level":"info","message":"Server started on port 3000","service":"foundess-caller","timestamp":"2025-04-07 13:13:53"}
+{"level":"info","message":"Connected to MongoDB successfully","service":"foundess-caller","timestamp":"2025-04-07 13:20:26"}
+{"level":"info","message":"Setting up automated call scheduler","service":"foundess-caller","timestamp":"2025-04-07 13:20:26"}
+{"level":"info","message":"Foundess Caller application started successfully","service":"foundess-caller","timestamp":"2025-04-07 13:20:26"}
+{"level":"info","message":"Server started on port 3000","service":"foundess-caller","timestamp":"2025-04-07 13:20:26"}
+{"contactId":"test-1744057388705","level":"info","message":"Initiating call to Test User","phone":"+19713364433","service":"foundess-caller","timestamp":"2025-04-07 13:23:08"}
+{"callSid":"CAed6ff2815f70c2e2baddfea0f065f62c","level":"info","message":"Call initiated","service":"foundess-caller","timestamp":"2025-04-07 13:23:09"}
+{"contactId":"test-1744057388705","error":{"kind":"ObjectId","message":"Cast to ObjectId failed for value \"test-1744057388705\" (type string) at path \"_id\" for model \"Contact\"","name":"CastError","path":"_id","reason":{},"stringValue":"\"test-1744057388705\"","value":"test-1744057388705","valueType":"string"},"level":"error","message":"Error updating contact call status","service":"foundess-caller","status":"initiated","timestamp":"2025-04-07 13:23:09"}
+{"contactId":"test-1744057388705","error":"Cast to ObjectId failed for value \"test-1744057388705\" (type string) at path \"_id\" for model \"Contact\"","level":"error","message":"Failed to initiate call to Test User","service":"foundess-caller","timestamp":"2025-04-07 13:23:09"}
+{"kind":"ObjectId","level":"error","message":"Error in test endpoint Cast to ObjectId failed for value \"test-1744057388705\" (type string) at path \"_id\" for model \"Contact\"","path":"_id","reason":{},"service":"foundess-caller","stack":"CastError: Cast to ObjectId failed for value \"test-1744057388705\" (type string) at path \"_id\" for model \"Contact\"\n    at ObjectId.cast (/Users/duy/Documents/foundess-caller/node_modules/mongoose/lib/schema/objectid.js:250:11)\n    at SchemaType.applySetters (/Users/duy/Documents/foundess-caller/node_modules/mongoose/lib/schematype.js:1219:12)\n    at SchemaType.castForQuery (/Users/duy/Documents/foundess-caller/node_modules/mongoose/lib/schematype.js:1633:15)\n    at cast (/Users/duy/Documents/foundess-caller/node_modules/mongoose/lib/cast.js:389:32)\n    at Query.cast (/Users/duy/Documents/foundess-caller/node_modules/mongoose/lib/query.js:4927:12)\n    at Query._castConditions (/Users/duy/Documents/foundess-caller/node_modules/mongoose/lib/query.js:2237:10)\n    at model.Query._findOneAndUpdate (/Users/duy/Documents/foundess-caller/node_modules/mongoose/lib/query.js:3319:8)\n    at model.Query.exec (/Users/duy/Documents/foundess-caller/node_modules/mongoose/lib/query.js:4447:28)\n    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)\n    at async Object.updateContactCallStatus (/Users/duy/Documents/foundess-caller/src/services/database.js:65:28)","stringValue":"\"test-1744057388705\"","timestamp":"2025-04-07 13:23:09","value":"test-1744057388705","valueType":"string"}
+{"callSid":"CAed6ff2815f70c2e2baddfea0f065f62c","level":"info","message":"Call status update: initiated","service":"foundess-caller","timestamp":"2025-04-07 13:23:09"}
+{"callSid":"CAed6ff2815f70c2e2baddfea0f065f62c","level":"info","message":"Updated call status to initiated","service":"foundess-caller","timestamp":"2025-04-07 13:23:09"}
+{"callSid":"CAed6ff2815f70c2e2baddfea0f065f62c","level":"info","message":"Call status update: ringing","service":"foundess-caller","timestamp":"2025-04-07 13:23:11"}
+{"callSid":"CAed6ff2815f70c2e2baddfea0f065f62c","level":"info","message":"Updated call status to ringing","service":"foundess-caller","timestamp":"2025-04-07 13:23:11"}
+{"callSid":"CAed6ff2815f70c2e2baddfea0f065f62c","level":"info","message":"Call status update: in-progress","service":"foundess-caller","timestamp":"2025-04-07 13:23:21"}
+{"callSid":"CAed6ff2815f70c2e2baddfea0f065f62c","level":"info","message":"Updated call status to in-progress","service":"foundess-caller","timestamp":"2025-04-07 13:23:21"}
+{"callSid":"CAed6ff2815f70c2e2baddfea0f065f62c","level":"info","message":"Call status update: completed","service":"foundess-caller","timestamp":"2025-04-07 13:23:34"}
+{"callSid":"CAed6ff2815f70c2e2baddfea0f065f62c","level":"info","message":"Updated call status to completed","service":"foundess-caller","timestamp":"2025-04-07 13:23:34"}
+{"callSid":"CAed6ff2815f70c2e2baddfea0f065f62c","level":"info","message":"Recording completed","recordingSid":"RE20334e65c4b2479a218d06b1c42623ea","service":"foundess-caller","timestamp":"2025-04-07 13:23:38"}
+{"callSid":"CAed6ff2815f70c2e2baddfea0f065f62c","level":"info","message":"Updated call status to completed","service":"foundess-caller","timestamp":"2025-04-07 13:23:38"}
+{"callSid":"CAed6ff2815f70c2e2baddfea0f065f62c","level":"info","message":"Updated call with recording information","recordingSid":"RE20334e65c4b2479a218d06b1c42623ea","service":"foundess-caller","timestamp":"2025-04-07 13:23:38"}
+{"contactId":"test-1744057685224","level":"info","message":"Initiating call to Test User","phone":"+19713364433","service":"foundess-caller","timestamp":"2025-04-07 13:28:05"}
+{"callSid":"CAda1f0d2a38dd56bdf7f69eb170480a2f","level":"info","message":"Call initiated","service":"foundess-caller","timestamp":"2025-04-07 13:28:05"}
+{"contactId":"test-1744057685224","error":{"kind":"ObjectId","message":"Cast to ObjectId failed for value \"test-1744057685224\" (type string) at path \"_id\" for model \"Contact\"","name":"CastError","path":"_id","reason":{},"stringValue":"\"test-1744057685224\"","value":"test-1744057685224","valueType":"string"},"level":"error","message":"Error updating contact call status","service":"foundess-caller","status":"initiated","timestamp":"2025-04-07 13:28:05"}
+{"contactId":"test-1744057685224","error":"Cast to ObjectId failed for value \"test-1744057685224\" (type string) at path \"_id\" for model \"Contact\"","level":"error","message":"Failed to initiate call to Test User","service":"foundess-caller","timestamp":"2025-04-07 13:28:05"}
+{"kind":"ObjectId","level":"error","message":"Error in test endpoint Cast to ObjectId failed for value \"test-1744057685224\" (type string) at path \"_id\" for model \"Contact\"","path":"_id","reason":{},"service":"foundess-caller","stack":"CastError: Cast to ObjectId failed for value \"test-1744057685224\" (type string) at path \"_id\" for model \"Contact\"\n    at ObjectId.cast (/Users/duy/Documents/foundess-caller/node_modules/mongoose/lib/schema/objectid.js:250:11)\n    at SchemaType.applySetters (/Users/duy/Documents/foundess-caller/node_modules/mongoose/lib/schematype.js:1219:12)\n    at SchemaType.castForQuery (/Users/duy/Documents/foundess-caller/node_modules/mongoose/lib/schematype.js:1633:15)\n    at cast (/Users/duy/Documents/foundess-caller/node_modules/mongoose/lib/cast.js:389:32)\n    at Query.cast (/Users/duy/Documents/foundess-caller/node_modules/mongoose/lib/query.js:4927:12)\n    at Query._castConditions (/Users/duy/Documents/foundess-caller/node_modules/mongoose/lib/query.js:2237:10)\n    at model.Query._findOneAndUpdate (/Users/duy/Documents/foundess-caller/node_modules/mongoose/lib/query.js:3319:8)\n    at model.Query.exec (/Users/duy/Documents/foundess-caller/node_modules/mongoose/lib/query.js:4447:28)\n    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)\n    at async Object.updateContactCallStatus (/Users/duy/Documents/foundess-caller/src/services/database.js:65:28)","stringValue":"\"test-1744057685224\"","timestamp":"2025-04-07 13:28:05","value":"test-1744057685224","valueType":"string"}
+{"callSid":"CAda1f0d2a38dd56bdf7f69eb170480a2f","level":"info","message":"Call status update: initiated","service":"foundess-caller","timestamp":"2025-04-07 13:28:05"}
+{"callSid":"CAda1f0d2a38dd56bdf7f69eb170480a2f","level":"info","message":"Updated call status to initiated","service":"foundess-caller","timestamp":"2025-04-07 13:28:05"}
+{"callSid":"CAda1f0d2a38dd56bdf7f69eb170480a2f","level":"info","message":"Call status update: ringing","service":"foundess-caller","timestamp":"2025-04-07 13:28:07"}
+{"callSid":"CAda1f0d2a38dd56bdf7f69eb170480a2f","level":"info","message":"Updated call status to ringing","service":"foundess-caller","timestamp":"2025-04-07 13:28:08"}
+{"callSid":"CAda1f0d2a38dd56bdf7f69eb170480a2f","level":"info","message":"Call status update: in-progress","service":"foundess-caller","timestamp":"2025-04-07 13:28:10"}
+{"callSid":"CAda1f0d2a38dd56bdf7f69eb170480a2f","level":"info","message":"Updated call status to in-progress","service":"foundess-caller","timestamp":"2025-04-07 13:28:10"}
+{"callSid":"CAda1f0d2a38dd56bdf7f69eb170480a2f","level":"info","message":"Call connected","service":"foundess-caller","timestamp":"2025-04-07 13:28:18"}
+{"callSid":"CAda1f0d2a38dd56bdf7f69eb170480a2f","level":"error","message":"No call record found","service":"foundess-caller","timestamp":"2025-04-07 13:28:18"}
+{"callSid":"CAda1f0d2a38dd56bdf7f69eb170480a2f","level":"info","message":"Call status update: completed","service":"foundess-caller","timestamp":"2025-04-07 13:28:23"}
+{"callSid":"CAda1f0d2a38dd56bdf7f69eb170480a2f","level":"info","message":"Updated call status to completed","service":"foundess-caller","timestamp":"2025-04-07 13:28:23"}
+{"callSid":"CAda1f0d2a38dd56bdf7f69eb170480a2f","level":"info","message":"Recording completed","recordingSid":"RE7a9b3d50094f97839b12fe1126d31202","service":"foundess-caller","timestamp":"2025-04-07 13:28:27"}
+{"callSid":"CAda1f0d2a38dd56bdf7f69eb170480a2f","level":"info","message":"Updated call status to completed","service":"foundess-caller","timestamp":"2025-04-07 13:28:27"}
+{"callSid":"CAda1f0d2a38dd56bdf7f69eb170480a2f","level":"info","message":"Updated call with recording information","recordingSid":"RE7a9b3d50094f97839b12fe1126d31202","service":"foundess-caller","timestamp":"2025-04-07 13:28:27"}
+{"level":"info","message":"Connected to MongoDB successfully","service":"foundess-caller","timestamp":"2025-04-07 13:35:45"}
+{"level":"info","message":"Setting up automated call scheduler","service":"foundess-caller","timestamp":"2025-04-07 13:35:45"}
+{"level":"info","message":"Foundess Caller application started successfully","service":"foundess-caller","timestamp":"2025-04-07 13:35:45"}
+{"level":"info","message":"Server started on port 3000","service":"foundess-caller","timestamp":"2025-04-07 13:35:45"}
+{"contactId":"test-1744058154827","level":"info","message":"Initiating call to Test User","phone":"+19713364433","service":"foundess-caller","timestamp":"2025-04-07 13:35:54"}
+{"callSid":"CAb01d8c9fdf12ef401b4e13bf7afa99ae","level":"info","message":"Call initiated","service":"foundess-caller","timestamp":"2025-04-07 13:35:55"}
+{"contactId":"test-1744058154827","level":"info","message":"Skipping database updates for temporary test contact","service":"foundess-caller","timestamp":"2025-04-07 13:35:55"}
+{"callSid":"CAb01d8c9fdf12ef401b4e13bf7afa99ae","level":"info","message":"Call status update: initiated","service":"foundess-caller","timestamp":"2025-04-07 13:35:55"}
+{"callSid":"CAb01d8c9fdf12ef401b4e13bf7afa99ae","level":"info","message":"Updated call status to initiated","service":"foundess-caller","timestamp":"2025-04-07 13:35:55"}
+{"callSid":"CAb01d8c9fdf12ef401b4e13bf7afa99ae","level":"info","message":"Call status update: ringing","service":"foundess-caller","timestamp":"2025-04-07 13:35:56"}
+{"callSid":"CAb01d8c9fdf12ef401b4e13bf7afa99ae","level":"info","message":"Updated call status to ringing","service":"foundess-caller","timestamp":"2025-04-07 13:35:56"}
+{"callSid":"CAb01d8c9fdf12ef401b4e13bf7afa99ae","level":"info","message":"Call status update: in-progress","service":"foundess-caller","timestamp":"2025-04-07 13:35:58"}
+{"callSid":"CAb01d8c9fdf12ef401b4e13bf7afa99ae","level":"info","message":"Updated call status to in-progress","service":"foundess-caller","timestamp":"2025-04-07 13:35:58"}
+{"callSid":"CAb01d8c9fdf12ef401b4e13bf7afa99ae","level":"info","message":"Call connected","service":"foundess-caller","timestamp":"2025-04-07 13:36:02"}
+{"callSid":"CAb01d8c9fdf12ef401b4e13bf7afa99ae","level":"error","message":"No call record found","service":"foundess-caller","timestamp":"2025-04-07 13:36:03"}
+{"callSid":"CAb01d8c9fdf12ef401b4e13bf7afa99ae","level":"info","message":"Call status update: completed","service":"foundess-caller","timestamp":"2025-04-07 13:36:07"}
+{"callSid":"CAb01d8c9fdf12ef401b4e13bf7afa99ae","level":"info","message":"Updated call status to completed","service":"foundess-caller","timestamp":"2025-04-07 13:36:07"}
+{"callSid":"CAb01d8c9fdf12ef401b4e13bf7afa99ae","level":"info","message":"Recording completed","recordingSid":"RE2b1212c8a930cd7a54c6769eff040320","service":"foundess-caller","timestamp":"2025-04-07 13:36:11"}
+{"callSid":"CAb01d8c9fdf12ef401b4e13bf7afa99ae","error":"Call is not defined","level":"error","message":"Failed to update call recording","service":"foundess-caller","timestamp":"2025-04-07 13:36:11"}
+{"callSid":"CAb01d8c9fdf12ef401b4e13bf7afa99ae","error":{},"level":"error","message":"Error in /recording webhook","recordingSid":"RE2b1212c8a930cd7a54c6769eff040320","service":"foundess-caller","timestamp":"2025-04-07 13:36:11"}
+{"level":"info","message":"Connected to MongoDB successfully","service":"foundess-caller","timestamp":"2025-04-07 13:38:06"}
+{"level":"info","message":"Setting up automated call scheduler","service":"foundess-caller","timestamp":"2025-04-07 13:38:06"}
+{"level":"info","message":"Foundess Caller application started successfully","service":"foundess-caller","timestamp":"2025-04-07 13:38:06"}
+{"level":"info","message":"Server started on port 3000","service":"foundess-caller","timestamp":"2025-04-07 13:38:06"}
+{"level":"info","message":"Connected to MongoDB successfully","service":"foundess-caller","timestamp":"2025-04-07 13:38:12"}
+{"level":"info","message":"Setting up automated call scheduler","service":"foundess-caller","timestamp":"2025-04-07 13:38:12"}
+{"level":"info","message":"Foundess Caller application started successfully","service":"foundess-caller","timestamp":"2025-04-07 13:38:12"}
+{"level":"info","message":"Server started on port 3000","service":"foundess-caller","timestamp":"2025-04-07 13:38:12"}
+{"level":"info","message":"Connected to MongoDB successfully","service":"foundess-caller","timestamp":"2025-04-07 13:38:24"}
+{"level":"info","message":"Setting up automated call scheduler","service":"foundess-caller","timestamp":"2025-04-07 13:38:24"}
+{"level":"info","message":"Foundess Caller application started successfully","service":"foundess-caller","timestamp":"2025-04-07 13:38:24"}
+{"level":"info","message":"Server started on port 3000","service":"foundess-caller","timestamp":"2025-04-07 13:38:24"}
+{"level":"info","message":"Connected to MongoDB successfully","service":"foundess-caller","timestamp":"2025-04-07 13:38:26"}
+{"level":"info","message":"Setting up automated call scheduler","service":"foundess-caller","timestamp":"2025-04-07 13:38:26"}
+{"level":"info","message":"Foundess Caller application started successfully","service":"foundess-caller","timestamp":"2025-04-07 13:38:26"}
+{"level":"info","message":"Server started on port 3000","service":"foundess-caller","timestamp":"2025-04-07 13:38:26"}
+{"contactId":"test-1744058310250","level":"info","message":"Initiating call to Test User","phone":"+19713364433","service":"foundess-caller","timestamp":"2025-04-07 13:38:30"}
+{"callSid":"CA9191ed4b44ee362c74966abe64f00ee0","level":"info","message":"Call initiated","service":"foundess-caller","timestamp":"2025-04-07 13:38:30"}
+{"contactId":"test-1744058310250","level":"info","message":"Skipping database updates for temporary test contact","service":"foundess-caller","timestamp":"2025-04-07 13:38:30"}
+{"callSid":"CA9191ed4b44ee362c74966abe64f00ee0","level":"info","message":"Call status update: initiated","service":"foundess-caller","timestamp":"2025-04-07 13:38:30"}
+{"callSid":"CA9191ed4b44ee362c74966abe64f00ee0","level":"info","message":"Updated call status to initiated","service":"foundess-caller","timestamp":"2025-04-07 13:38:30"}
+{"callSid":"CA9191ed4b44ee362c74966abe64f00ee0","level":"info","message":"Call status update: ringing","service":"foundess-caller","timestamp":"2025-04-07 13:38:31"}
+{"callSid":"CA9191ed4b44ee362c74966abe64f00ee0","level":"info","message":"Updated call status to ringing","service":"foundess-caller","timestamp":"2025-04-07 13:38:31"}
+{"callSid":"CA9191ed4b44ee362c74966abe64f00ee0","level":"info","message":"Call status update: in-progress","service":"foundess-caller","timestamp":"2025-04-07 13:38:33"}
+{"callSid":"CA9191ed4b44ee362c74966abe64f00ee0","level":"info","message":"Updated call status to in-progress","service":"foundess-caller","timestamp":"2025-04-07 13:38:33"}
+{"callSid":"CA9191ed4b44ee362c74966abe64f00ee0","level":"info","message":"Call connected","service":"foundess-caller","timestamp":"2025-04-07 13:38:39"}
+{"callSid":"CA9191ed4b44ee362c74966abe64f00ee0","level":"error","message":"No call record found","service":"foundess-caller","timestamp":"2025-04-07 13:38:40"}
+{"callSid":"CA9191ed4b44ee362c74966abe64f00ee0","level":"info","message":"Call status update: completed","service":"foundess-caller","timestamp":"2025-04-07 13:38:44"}
+{"callSid":"CA9191ed4b44ee362c74966abe64f00ee0","level":"info","message":"Updated call status to completed","service":"foundess-caller","timestamp":"2025-04-07 13:38:44"}
+{"callSid":"CA9191ed4b44ee362c74966abe64f00ee0","level":"info","message":"Recording completed","recordingSid":"RE2ee51ca837672fb9aa44db7eecb43718","service":"foundess-caller","timestamp":"2025-04-07 13:38:49"}
+{"callSid":"CA9191ed4b44ee362c74966abe64f00ee0","level":"warn","message":"Call record not found while trying to update recording","service":"foundess-caller","timestamp":"2025-04-07 13:38:49"}
+{"level":"info","message":"Connected to MongoDB successfully","service":"foundess-caller","timestamp":"2025-04-07 13:40:59"}
+{"level":"info","message":"Setting up automated call scheduler","service":"foundess-caller","timestamp":"2025-04-07 13:40:59"}
+{"level":"info","message":"Foundess Caller application started successfully","service":"foundess-caller","timestamp":"2025-04-07 13:40:59"}
+{"level":"info","message":"Server started on port 3000","service":"foundess-caller","timestamp":"2025-04-07 13:40:59"}
+{"level":"info","message":"Connected to MongoDB successfully","service":"foundess-caller","timestamp":"2025-04-07 13:41:24"}
+{"level":"info","message":"Setting up automated call scheduler","service":"foundess-caller","timestamp":"2025-04-07 13:41:24"}
+{"level":"info","message":"Foundess Caller application started successfully","service":"foundess-caller","timestamp":"2025-04-07 13:41:24"}
+{"level":"info","message":"Server started on port 3000","service":"foundess-caller","timestamp":"2025-04-07 13:41:24"}
+{"level":"info","message":"Connected to MongoDB successfully","service":"foundess-caller","timestamp":"2025-04-07 13:41:32"}
+{"level":"info","message":"Setting up automated call scheduler","service":"foundess-caller","timestamp":"2025-04-07 13:41:32"}
+{"level":"info","message":"Foundess Caller application started successfully","service":"foundess-caller","timestamp":"2025-04-07 13:41:32"}
+{"level":"info","message":"Server started on port 3000","service":"foundess-caller","timestamp":"2025-04-07 13:41:32"}
+{"level":"info","message":"Connected to MongoDB successfully","service":"foundess-caller","timestamp":"2025-04-07 13:41:40"}
+{"level":"info","message":"Setting up automated call scheduler","service":"foundess-caller","timestamp":"2025-04-07 13:41:40"}
+{"level":"info","message":"Foundess Caller application started successfully","service":"foundess-caller","timestamp":"2025-04-07 13:41:40"}
+{"level":"info","message":"Server started on port 3000","service":"foundess-caller","timestamp":"2025-04-07 13:41:40"}
+{"level":"info","message":"Connected to MongoDB successfully","service":"foundess-caller","timestamp":"2025-04-07 13:41:42"}
+{"level":"info","message":"Setting up automated call scheduler","service":"foundess-caller","timestamp":"2025-04-07 13:41:42"}
+{"level":"info","message":"Foundess Caller application started successfully","service":"foundess-caller","timestamp":"2025-04-07 13:41:42"}
+{"level":"info","message":"Server started on port 3000","service":"foundess-caller","timestamp":"2025-04-07 13:41:42"}
+{"level":"info","message":"Connected to MongoDB successfully","service":"foundess-caller","timestamp":"2025-04-07 13:41:45"}
+{"level":"info","message":"Setting up automated call scheduler","service":"foundess-caller","timestamp":"2025-04-07 13:41:45"}
+{"level":"info","message":"Foundess Caller application started successfully","service":"foundess-caller","timestamp":"2025-04-07 13:41:45"}
+{"level":"info","message":"Server started on port 3000","service":"foundess-caller","timestamp":"2025-04-07 13:41:45"}
+{"level":"info","message":"Connected to MongoDB successfully","service":"foundess-caller","timestamp":"2025-04-07 13:42:24"}
+{"level":"info","message":"Setting up automated call scheduler","service":"foundess-caller","timestamp":"2025-04-07 13:42:24"}
+{"level":"info","message":"Foundess Caller application started successfully","service":"foundess-caller","timestamp":"2025-04-07 13:42:24"}
+{"level":"info","message":"Server started on port 3000","service":"foundess-caller","timestamp":"2025-04-07 13:42:24"}
+{"level":"info","message":"Connected to MongoDB successfully","service":"foundess-caller","timestamp":"2025-04-07 13:45:24"}
+{"level":"info","message":"Setting up automated call scheduler","service":"foundess-caller","timestamp":"2025-04-07 13:45:24"}
+{"level":"info","message":"Foundess Caller application started successfully","service":"foundess-caller","timestamp":"2025-04-07 13:45:24"}
+{"level":"info","message":"Server started on port 3000","service":"foundess-caller","timestamp":"2025-04-07 13:45:24"}
+{"level":"info","message":"Connected to MongoDB successfully","service":"foundess-caller","timestamp":"2025-04-07 13:45:34"}
+{"level":"info","message":"Setting up automated call scheduler","service":"foundess-caller","timestamp":"2025-04-07 13:45:34"}
+{"level":"info","message":"Foundess Caller application started successfully","service":"foundess-caller","timestamp":"2025-04-07 13:45:34"}
+{"level":"info","message":"Server started on port 3000","service":"foundess-caller","timestamp":"2025-04-07 13:45:34"}
+{"level":"info","message":"Connected to MongoDB successfully","service":"foundess-caller","timestamp":"2025-04-07 13:45:50"}
+{"level":"info","message":"Setting up automated call scheduler","service":"foundess-caller","timestamp":"2025-04-07 13:45:50"}
+{"level":"info","message":"Foundess Caller application started successfully","service":"foundess-caller","timestamp":"2025-04-07 13:45:51"}
+{"level":"info","message":"Server started on port 3000","service":"foundess-caller","timestamp":"2025-04-07 13:45:51"}
+{"contactId":"test-1744058753857","level":"info","message":"Initiating call to Test User","phone":"+19713364433","service":"foundess-caller","timestamp":"2025-04-07 13:45:53"}
+{"callSid":"CA5c90fa10e36db5a284bf9647eef29f5e","level":"info","message":"Call initiated","service":"foundess-caller","timestamp":"2025-04-07 13:45:54"}
+{"contactId":"test-1744058753857","level":"info","message":"Skipping database updates for temporary test contact","service":"foundess-caller","timestamp":"2025-04-07 13:45:54"}
+{"callSid":"CA5c90fa10e36db5a284bf9647eef29f5e","level":"info","message":"Call status update: initiated","service":"foundess-caller","timestamp":"2025-04-07 13:45:54"}
+{"callSid":"CA5c90fa10e36db5a284bf9647eef29f5e","level":"warn","message":"Call record not found when trying to update status to 'initiated'","service":"foundess-caller","timestamp":"2025-04-07 13:45:54"}
+{"callSid":"CA5c90fa10e36db5a284bf9647eef29f5e","level":"info","message":"Call status update: ringing","service":"foundess-caller","timestamp":"2025-04-07 13:45:55"}
+{"callSid":"CA5c90fa10e36db5a284bf9647eef29f5e","level":"warn","message":"Call record not found when trying to update status to 'ringing'","service":"foundess-caller","timestamp":"2025-04-07 13:45:55"}
+{"callSid":"CA5c90fa10e36db5a284bf9647eef29f5e","level":"info","message":"Call status update: in-progress","service":"foundess-caller","timestamp":"2025-04-07 13:45:57"}
+{"callSid":"CA5c90fa10e36db5a284bf9647eef29f5e","level":"warn","message":"Call record not found when trying to update status to 'in-progress'","service":"foundess-caller","timestamp":"2025-04-07 13:45:57"}
+{"callSid":"CA5c90fa10e36db5a284bf9647eef29f5e","level":"info","message":"Call connected","service":"foundess-caller","timestamp":"2025-04-07 13:45:59","toPhoneNumber":"+19713364433"}
+{"callSid":"CA5c90fa10e36db5a284bf9647eef29f5e","level":"warn","message":"Call record not found initially. Checking if its a test call.","service":"foundess-caller","timestamp":"2025-04-07 13:45:59","toPhoneNumber":"+19713364433"}
+{"callSid":"CA5c90fa10e36db5a284bf9647eef29f5e","level":"info","message":"Proceeding as a temporary test call (no DB record).","service":"foundess-caller","timestamp":"2025-04-07 13:45:59"}
+{"callSid":"CA5c90fa10e36db5a284bf9647eef29f5e","contactId":"test-CA5c90fa10e36db5a284bf9647eef29f5e","level":"info","message":"Initialized conversation for call","service":"foundess-caller","timestamp":"2025-04-07 13:45:59"}
+{"callSid":"CA5c90fa10e36db5a284bf9647eef29f5e","input":"I'm doing well. How are you doing?","level":"info","message":"Received user speech","service":"foundess-caller","timestamp":"2025-04-07 13:46:08"}
+{"callSid":"CA5c90fa10e36db5a284bf9647eef29f5e","level":"warn","message":"Attempted to update transcript for non-existent call record (likely test call)","service":"foundess-caller","timestamp":"2025-04-07 13:46:08"}
+{"callSid":"CA5c90fa10e36db5a284bf9647eef29f5e","error":"databaseService.getCallInfo is not a function","level":"error","message":"Error generating AI response","service":"foundess-caller","stack":"TypeError: databaseService.getCallInfo is not a function\n    at Object.getResponse (/Users/duy/Documents/foundess-caller/src/services/conversation.js:60:42)\n    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)\n    at async /Users/duy/Documents/foundess-caller/src/webhooks/twilioWebhooks.js:198:24","timestamp":"2025-04-07 13:46:08"}
+{"callSid":"CA5c90fa10e36db5a284bf9647eef29f5e","input":"I'm doing well. How are you doing?","level":"info","message":"Received user speech","service":"foundess-caller","timestamp":"2025-04-07 13:46:18"}
+{"callSid":"CA5c90fa10e36db5a284bf9647eef29f5e","level":"warn","message":"Attempted to update transcript for non-existent call record (likely test call)","service":"foundess-caller","timestamp":"2025-04-07 13:46:19"}
+{"callSid":"CA5c90fa10e36db5a284bf9647eef29f5e","error":"databaseService.getCallInfo is not a function","level":"error","message":"Error generating AI response","service":"foundess-caller","stack":"TypeError: databaseService.getCallInfo is not a function\n    at Object.getResponse (/Users/duy/Documents/foundess-caller/src/services/conversation.js:60:42)\n    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)\n    at async /Users/duy/Documents/foundess-caller/src/webhooks/twilioWebhooks.js:198:24","timestamp":"2025-04-07 13:46:19"}
+{"callSid":"CA5c90fa10e36db5a284bf9647eef29f5e","input":"I'm doing well, how you doing?","level":"info","message":"Received user speech","service":"foundess-caller","timestamp":"2025-04-07 13:46:32"}
+{"callSid":"CA5c90fa10e36db5a284bf9647eef29f5e","level":"warn","message":"Attempted to update transcript for non-existent call record (likely test call)","service":"foundess-caller","timestamp":"2025-04-07 13:46:32"}
+{"callSid":"CA5c90fa10e36db5a284bf9647eef29f5e","error":"databaseService.getCallInfo is not a function","level":"error","message":"Error generating AI response","service":"foundess-caller","stack":"TypeError: databaseService.getCallInfo is not a function\n    at Object.getResponse (/Users/duy/Documents/foundess-caller/src/services/conversation.js:60:42)\n    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)\n    at async /Users/duy/Documents/foundess-caller/src/webhooks/twilioWebhooks.js:198:24","timestamp":"2025-04-07 13:46:32"}
+{"callSid":"CA5c90fa10e36db5a284bf9647eef29f5e","level":"info","message":"Call status update: completed","service":"foundess-caller","timestamp":"2025-04-07 13:46:40"}
+{"callSid":"CA5c90fa10e36db5a284bf9647eef29f5e","level":"info","message":"Received final status 'completed' for call without DB record (likely test call). No DB update needed.","service":"foundess-caller","timestamp":"2025-04-07 13:46:41"}
+{"callSid":"CA5c90fa10e36db5a284bf9647eef29f5e","level":"info","message":"Cleared conversation history","service":"foundess-caller","timestamp":"2025-04-07 13:46:41"}
+{"callSid":"CA5c90fa10e36db5a284bf9647eef29f5e","level":"info","message":"Recording completed","recordingSid":"RE3e1e9898bc214318b3853446c51d69fb","service":"foundess-caller","timestamp":"2025-04-07 13:46:45"}
+{"callSid":"CA5c90fa10e36db5a284bf9647eef29f5e","level":"warn","message":"Call record not found while trying to update recording","service":"foundess-caller","timestamp":"2025-04-07 13:46:45"}
+{"level":"info","message":"Connected to MongoDB successfully","service":"foundess-caller","timestamp":"2025-04-07 13:53:34"}
+{"level":"info","message":"Setting up automated call scheduler","service":"foundess-caller","timestamp":"2025-04-07 13:53:34"}
+{"level":"info","message":"Foundess Caller application started successfully","service":"foundess-caller","timestamp":"2025-04-07 13:53:34"}
+{"level":"info","message":"Server started on port 3000","service":"foundess-caller","timestamp":"2025-04-07 13:53:34"}
+{"level":"info","message":"Connected to MongoDB successfully","service":"foundess-caller","timestamp":"2025-04-07 13:53:40"}
+{"level":"info","message":"Setting up automated call scheduler","service":"foundess-caller","timestamp":"2025-04-07 13:53:40"}
+{"level":"info","message":"Foundess Caller application started successfully","service":"foundess-caller","timestamp":"2025-04-07 13:53:40"}
+{"level":"info","message":"Server started on port 3000","service":"foundess-caller","timestamp":"2025-04-07 13:53:40"}
+{"contactId":"test-1744059222754","level":"info","message":"Initiating call to Test User","phone":"+19713364433","service":"foundess-caller","timestamp":"2025-04-07 13:53:42"}
+{"callSid":"CAf6d08958c5c455165b6a10991e33de74","level":"info","message":"Call initiated","service":"foundess-caller","timestamp":"2025-04-07 13:53:43"}
+{"contactId":"test-1744059222754","level":"info","message":"Skipping database updates for temporary test contact","service":"foundess-caller","timestamp":"2025-04-07 13:53:43"}
+{"callSid":"CAf6d08958c5c455165b6a10991e33de74","level":"info","message":"Call status update: initiated","service":"foundess-caller","timestamp":"2025-04-07 13:53:43"}
+{"callSid":"CAf6d08958c5c455165b6a10991e33de74","level":"warn","message":"Call record not found when trying to update status to 'initiated'","service":"foundess-caller","timestamp":"2025-04-07 13:53:43"}
+{"callSid":"CAf6d08958c5c455165b6a10991e33de74","level":"info","message":"Call status update: ringing","service":"foundess-caller","timestamp":"2025-04-07 13:53:44"}
+{"callSid":"CAf6d08958c5c455165b6a10991e33de74","level":"warn","message":"Call record not found when trying to update status to 'ringing'","service":"foundess-caller","timestamp":"2025-04-07 13:53:44"}
+{"callSid":"CAf6d08958c5c455165b6a10991e33de74","level":"info","message":"Call status update: in-progress","service":"foundess-caller","timestamp":"2025-04-07 13:53:46"}
+{"callSid":"CAf6d08958c5c455165b6a10991e33de74","level":"warn","message":"Call record not found when trying to update status to 'in-progress'","service":"foundess-caller","timestamp":"2025-04-07 13:53:46"}
+{"callSid":"CAf6d08958c5c455165b6a10991e33de74","level":"info","message":"Call connected","service":"foundess-caller","timestamp":"2025-04-07 13:53:48","toPhoneNumber":"+19713364433"}
+{"callSid":"CAf6d08958c5c455165b6a10991e33de74","level":"warn","message":"Call record not found initially. Checking if its a test call.","service":"foundess-caller","timestamp":"2025-04-07 13:53:49","toPhoneNumber":"+19713364433"}
+{"callSid":"CAf6d08958c5c455165b6a10991e33de74","level":"info","message":"Proceeding as a temporary test call (no DB record).","service":"foundess-caller","timestamp":"2025-04-07 13:53:49"}
+{"callSid":"CAf6d08958c5c455165b6a10991e33de74","contactId":"test-CAf6d08958c5c455165b6a10991e33de74","level":"info","message":"Initialized conversation for call","service":"foundess-caller","timestamp":"2025-04-07 13:53:49"}
+{"callSid":"CAf6d08958c5c455165b6a10991e33de74","input":"I'm doing well. How are you doing?","level":"info","message":"Received user speech","service":"foundess-caller","timestamp":"2025-04-07 13:53:58"}
+{"callSid":"CAf6d08958c5c455165b6a10991e33de74","level":"warn","message":"Attempted to update transcript for non-existent call record (likely test call)","service":"foundess-caller","timestamp":"2025-04-07 13:53:58"}
+{"callSid":"CAf6d08958c5c455165b6a10991e33de74","level":"warn","message":"Call record not found by getCallInfo","service":"foundess-caller","timestamp":"2025-04-07 13:53:58"}
+{"callSid":"CAf6d08958c5c455165b6a10991e33de74","level":"debug","message":"Sending request to OpenAI","service":"foundess-caller","timestamp":"2025-04-07 13:53:58"}
+{"callSid":"CAf6d08958c5c455165b6a10991e33de74","level":"warn","message":"Attempted to update transcript for non-existent call record (likely test call)","service":"foundess-caller","timestamp":"2025-04-07 13:54:00"}
+{"aiResponse":"I'm glad to hear you're doing well! I'm here to fo...","callSid":"CAf6d08958c5c455165b6a10991e33de74","level":"info","message":"Conversation exchange","service":"foundess-caller","timestamp":"2025-04-07 13:54:00","userInput":"I'm doing well. How are you doing?"}
+{"callSid":"CAf6d08958c5c455165b6a10991e33de74","level":"info","message":"Call status update: completed","service":"foundess-caller","timestamp":"2025-04-07 13:54:10"}
+{"callSid":"CAf6d08958c5c455165b6a10991e33de74","level":"info","message":"Received final status 'completed' for call without DB record (likely test call). No DB update needed.","service":"foundess-caller","timestamp":"2025-04-07 13:54:10"}
+{"callSid":"CAf6d08958c5c455165b6a10991e33de74","level":"info","message":"Cleared conversation history","service":"foundess-caller","timestamp":"2025-04-07 13:54:10"}
+{"callSid":"CAf6d08958c5c455165b6a10991e33de74","level":"info","message":"Recording completed","recordingSid":"RE4ad64d76f4d7681d2ddb97137f67794f","service":"foundess-caller","timestamp":"2025-04-07 13:54:14"}
+{"callSid":"CAf6d08958c5c455165b6a10991e33de74","level":"warn","message":"Call record not found while trying to update recording","service":"foundess-caller","timestamp":"2025-04-07 13:54:15"}
+{"level":"info","message":"Connected to MongoDB successfully","service":"foundess-caller","timestamp":"2025-04-07 13:54:57"}
+{"level":"info","message":"Setting up automated call scheduler","service":"foundess-caller","timestamp":"2025-04-07 13:54:57"}
+{"level":"info","message":"Foundess Caller application started successfully","service":"foundess-caller","timestamp":"2025-04-07 13:54:57"}
+{"level":"info","message":"Server started on port 3000","service":"foundess-caller","timestamp":"2025-04-07 13:54:57"}
+{"contactId":"test-1744059353537","level":"info","message":"Initiating call to Test User","phone":"+16505098926","service":"foundess-caller","timestamp":"2025-04-07 13:55:53"}
+{"contactId":"test-1744059353537","error":"The number +16505098926 is unverified. Trial accounts may only make calls to verified numbers.","level":"error","message":"Failed to initiate call to Test User","service":"foundess-caller","timestamp":"2025-04-07 13:55:53"}
+{"code":21219,"level":"error","message":"Error in test endpoint The number +16505098926 is unverified. Trial accounts may only make calls to verified numbers.","moreInfo":"https://www.twilio.com/docs/errors/21219","service":"foundess-caller","stack":"Error: The number +16505098926 is unverified. Trial accounts may only make calls to verified numbers.\n    at success (/Users/duy/Documents/foundess-caller/node_modules/twilio/lib/base/Version.js:79:23)\n    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)\n    at async Object.initiateCall (/Users/duy/Documents/foundess-caller/src/services/caller.js:39:18)\n    at async /Users/duy/Documents/foundess-caller/src/webhooks/twilioWebhooks.js:385:18","status":400,"timestamp":"2025-04-07 13:55:53"}
+{"level":"info","message":"Connected to MongoDB successfully","service":"foundess-caller","timestamp":"2025-04-07 14:12:02"}
+{"level":"info","message":"Setting up automated call scheduler","service":"foundess-caller","timestamp":"2025-04-07 14:12:02"}
+{"level":"info","message":"Foundess Caller application started successfully","service":"foundess-caller","timestamp":"2025-04-07 14:12:02"}
+{"level":"info","message":"Server started on port 3000","service":"foundess-caller","timestamp":"2025-04-07 14:12:02"}
+{"contactId":"test-1744060381488","level":"info","message":"Initiating call to Test User","phone":"+16505098926","service":"foundess-caller","timestamp":"2025-04-07 14:13:01"}
+{"contactId":"test-1744060381488","error":"The number +16505098926 is unverified. Trial accounts may only make calls to verified numbers.","level":"error","message":"Failed to initiate call to Test User","service":"foundess-caller","timestamp":"2025-04-07 14:13:01"}
+{"code":21219,"level":"error","message":"Error in test endpoint The number +16505098926 is unverified. Trial accounts may only make calls to verified numbers.","moreInfo":"https://www.twilio.com/docs/errors/21219","service":"foundess-caller","stack":"Error: The number +16505098926 is unverified. Trial accounts may only make calls to verified numbers.\n    at success (/Users/duy/Documents/foundess-caller/node_modules/twilio/lib/base/Version.js:79:23)\n    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)\n    at async Object.initiateCall (/Users/duy/Documents/foundess-caller/src/services/caller.js:39:18)\n    at async /Users/duy/Documents/foundess-caller/src/webhooks/twilioWebhooks.js:385:18","status":400,"timestamp":"2025-04-07 14:13:01"}
+{"contactId":"test-1744060408660","level":"info","message":"Initiating call to Test User","phone":"+16505098926","service":"foundess-caller","timestamp":"2025-04-07 14:13:28"}
+{"contactId":"test-1744060408660","error":"The number +16505098926 is unverified. Trial accounts may only make calls to verified numbers.","level":"error","message":"Failed to initiate call to Test User","service":"foundess-caller","timestamp":"2025-04-07 14:13:28"}
+{"code":21219,"level":"error","message":"Error in test endpoint The number +16505098926 is unverified. Trial accounts may only make calls to verified numbers.","moreInfo":"https://www.twilio.com/docs/errors/21219","service":"foundess-caller","stack":"Error: The number +16505098926 is unverified. Trial accounts may only make calls to verified numbers.\n    at success (/Users/duy/Documents/foundess-caller/node_modules/twilio/lib/base/Version.js:79:23)\n    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)\n    at async Object.initiateCall (/Users/duy/Documents/foundess-caller/src/services/caller.js:39:18)\n    at async /Users/duy/Documents/foundess-caller/src/webhooks/twilioWebhooks.js:385:18","status":400,"timestamp":"2025-04-07 14:13:28"}
+{"level":"info","message":"Connected to MongoDB successfully","service":"foundess-caller","timestamp":"2025-04-07 14:45:51"}
+{"level":"info","message":"Setting up automated call scheduler","service":"foundess-caller","timestamp":"2025-04-07 14:45:51"}
+{"level":"info","message":"Foundess Caller application started successfully","service":"foundess-caller","timestamp":"2025-04-07 14:45:51"}
+{"level":"info","message":"Server started on port 3000","service":"foundess-caller","timestamp":"2025-04-07 14:45:51"}
+{"level":"info","message":"Connected to MongoDB successfully","service":"foundess-caller","timestamp":"2025-04-07 14:46:00"}
+{"level":"info","message":"Setting up automated call scheduler","service":"foundess-caller","timestamp":"2025-04-07 14:46:00"}
+{"level":"info","message":"Foundess Caller application started successfully","service":"foundess-caller","timestamp":"2025-04-07 14:46:00"}
+{"level":"info","message":"Server started on port 3000","service":"foundess-caller","timestamp":"2025-04-07 14:46:00"}
+{"level":"info","message":"Connected to MongoDB successfully","service":"foundess-caller","timestamp":"2025-04-07 14:46:18"}
+{"level":"info","message":"Setting up automated call scheduler","service":"foundess-caller","timestamp":"2025-04-07 14:46:18"}
+{"level":"info","message":"Foundess Caller application started successfully","service":"foundess-caller","timestamp":"2025-04-07 14:46:18"}
+{"level":"info","message":"Server started on port 3000","service":"foundess-caller","timestamp":"2025-04-07 14:46:18"}
+{"level":"info","message":"Connected to MongoDB successfully","service":"foundess-caller","timestamp":"2025-04-07 14:46:22"}
+{"level":"info","message":"Setting up automated call scheduler","service":"foundess-caller","timestamp":"2025-04-07 14:46:22"}
+{"level":"info","message":"Foundess Caller application started successfully","service":"foundess-caller","timestamp":"2025-04-07 14:46:23"}
+{"level":"info","message":"Server started on port 3000","service":"foundess-caller","timestamp":"2025-04-07 14:46:23"}
+{"level":"info","message":"Connected to MongoDB successfully","service":"foundess-caller","timestamp":"2025-04-07 14:46:30"}
+{"level":"info","message":"Setting up automated call scheduler","service":"foundess-caller","timestamp":"2025-04-07 14:46:30"}
+{"level":"info","message":"Foundess Caller application started successfully","service":"foundess-caller","timestamp":"2025-04-07 14:46:30"}
+{"level":"info","message":"Server started on port 3000","service":"foundess-caller","timestamp":"2025-04-07 14:46:30"}
+{"level":"info","message":"Connected to MongoDB successfully","service":"foundess-caller","timestamp":"2025-04-07 14:46:33"}
+{"level":"info","message":"Setting up automated call scheduler","service":"foundess-caller","timestamp":"2025-04-07 14:46:33"}
+{"level":"info","message":"Foundess Caller application started successfully","service":"foundess-caller","timestamp":"2025-04-07 14:46:33"}
+{"level":"info","message":"Server started on port 3000","service":"foundess-caller","timestamp":"2025-04-07 14:46:33"}
+{"level":"info","message":"Connected to MongoDB successfully","service":"foundess-caller","timestamp":"2025-04-07 14:47:54"}
+{"level":"info","message":"Setting up automated call scheduler","service":"foundess-caller","timestamp":"2025-04-07 14:47:54"}
+{"level":"info","message":"Foundess Caller application started successfully","service":"foundess-caller","timestamp":"2025-04-07 14:47:54"}
+{"level":"info","message":"Server started on port 3000","service":"foundess-caller","timestamp":"2025-04-07 14:47:54"}
+{"level":"info","message":"Connected to MongoDB successfully","service":"foundess-caller","timestamp":"2025-04-07 14:48:02"}
+{"level":"info","message":"Setting up automated call scheduler","service":"foundess-caller","timestamp":"2025-04-07 14:48:02"}
+{"level":"info","message":"Foundess Caller application started successfully","service":"foundess-caller","timestamp":"2025-04-07 14:48:02"}
+{"level":"info","message":"Watcher already running or disabled, skipping start attempt.","service":"foundess-caller","timestamp":"2025-04-07 14:48:02"}
+{"level":"info","message":"Server started on port 3000","service":"foundess-caller","timestamp":"2025-04-07 14:48:02"}
+{"level":"info","message":"Connected to MongoDB successfully","service":"foundess-caller","timestamp":"2025-04-07 14:48:10"}
+{"level":"info","message":"Setting up automated call scheduler","service":"foundess-caller","timestamp":"2025-04-07 14:48:10"}
+{"level":"info","message":"Foundess Caller application started successfully","service":"foundess-caller","timestamp":"2025-04-07 14:48:10"}
+{"level":"info","message":"Watcher already running or disabled, skipping start attempt.","service":"foundess-caller","timestamp":"2025-04-07 14:48:10"}
+{"level":"info","message":"Server started on port 3000","service":"foundess-caller","timestamp":"2025-04-07 14:48:10"}
+{"level":"info","message":"Connected to MongoDB successfully","service":"foundess-caller","timestamp":"2025-04-07 14:48:57"}
+{"level":"info","message":"Setting up automated call scheduler","service":"foundess-caller","timestamp":"2025-04-07 14:48:57"}
+{"level":"info","message":"Foundess Caller application started successfully","service":"foundess-caller","timestamp":"2025-04-07 14:48:57"}
+{"level":"info","message":"Watcher already running or disabled, skipping start attempt.","service":"foundess-caller","timestamp":"2025-04-07 14:48:57"}
+{"level":"info","message":"Server started on port 3000","service":"foundess-caller","timestamp":"2025-04-07 14:48:57"}
+{"level":"info","message":"Connected to MongoDB successfully","service":"foundess-caller","timestamp":"2025-04-07 14:51:56"}
+{"level":"info","message":"SIGINT signal received. Shutting down gracefully...","service":"foundess-caller","timestamp":"2025-04-07 14:53:41"}
+{"level":"info","message":"Stopping contact monitor service...","service":"foundess-caller","timestamp":"2025-04-07 14:53:41"}
+{"level":"info","message":"Contact monitor service stopped. Cleared 0 pending delayed calls.","service":"foundess-caller","timestamp":"2025-04-07 14:53:41"}
+{"level":"info","message":"Disconnected from MongoDB.","service":"foundess-caller","timestamp":"2025-04-07 14:53:41"}
+{"level":"info","message":"Connected to MongoDB successfully","service":"foundess-caller","timestamp":"2025-04-07 14:53:48"}
+{"level":"info","message":"Setting up automated call scheduler","service":"foundess-caller","timestamp":"2025-04-07 14:53:48"}
+{"level":"info","message":"Foundess Caller application started successfully","service":"foundess-caller","timestamp":"2025-04-07 14:53:48"}
+{"level":"info","message":"Watcher already running or disabled, skipping start attempt.","service":"foundess-caller","timestamp":"2025-04-07 14:53:48"}
+{"level":"info","message":"Server started on port 3000","service":"foundess-caller","timestamp":"2025-04-07 14:53:48"}
+{"level":"info","message":"Connected to MongoDB successfully","service":"foundess-caller","timestamp":"2025-04-07 14:58:22"}
+{"level":"info","message":"Setting up automated call scheduler","service":"foundess-caller","timestamp":"2025-04-07 14:58:22"}
+{"level":"info","message":"Foundess Caller application started successfully","service":"foundess-caller","timestamp":"2025-04-07 14:58:22"}
+{"level":"info","message":"Start attempt check: isMonitorRunning=false, monitorConfig.enabled=false, force=false","service":"foundess-caller","timestamp":"2025-04-07 14:58:22"}
+{"level":"warn","message":"Monitor service skipping start attempt. Running: false, Enabled: false, Force: false","service":"foundess-caller","timestamp":"2025-04-07 14:58:22"}
+{"level":"info","message":"Server started on port 3000","service":"foundess-caller","timestamp":"2025-04-07 14:58:22"}
+{"level":"info","message":"Connected to MongoDB successfully","service":"foundess-caller","timestamp":"2025-04-07 14:58:29"}
+{"level":"info","message":"Setting up automated call scheduler","service":"foundess-caller","timestamp":"2025-04-07 14:58:29"}
+{"level":"info","message":"Foundess Caller application started successfully","service":"foundess-caller","timestamp":"2025-04-07 14:58:29"}
+{"level":"info","message":"Attempting to initialize contact monitor...","service":"foundess-caller","timestamp":"2025-04-07 14:58:29"}
+{"level":"info","message":"Start attempt check: isMonitorRunning=false, monitorConfig.enabled=false, force=false","service":"foundess-caller","timestamp":"2025-04-07 14:58:29"}
+{"level":"warn","message":"Monitor service skipping start attempt. Running: false, Enabled: false, Force: false","service":"foundess-caller","timestamp":"2025-04-07 14:58:29"}
+{"level":"info","message":"Server started on port 3000","service":"foundess-caller","timestamp":"2025-04-07 14:58:29"}
+{"level":"info","message":"Starting scheduled call batch","service":"foundess-caller","timestamp":"2025-04-07 15:00:00"}
+{"level":"info","message":"Retrieved 0 contacts to call","service":"foundess-caller","timestamp":"2025-04-07 15:00:00"}
+{"level":"info","message":"No contacts to call at this time","service":"foundess-caller","timestamp":"2025-04-07 15:00:00"}
+{"level":"info","message":"Connected to MongoDB successfully","service":"foundess-caller","timestamp":"2025-04-07 15:03:00"}
+{"level":"info","message":"Setting up automated call scheduler","service":"foundess-caller","timestamp":"2025-04-07 15:03:00"}
+{"level":"info","message":"Foundess Caller application started successfully","service":"foundess-caller","timestamp":"2025-04-07 15:03:00"}
+{"level":"info","message":"Attempting to initialize contact monitor...","service":"foundess-caller","timestamp":"2025-04-07 15:03:00"}
+{"level":"info","message":"Start attempt check: isMonitorRunning=false, monitorConfig.enabled=false, force=false","service":"foundess-caller","timestamp":"2025-04-07 15:03:00"}
+{"level":"warn","message":"Monitor service skipping start attempt. Running: false, Enabled: false, Force: false","service":"foundess-caller","timestamp":"2025-04-07 15:03:00"}
+{"level":"info","message":"Server started on port 3000","service":"foundess-caller","timestamp":"2025-04-07 15:03:00"}
+{"level":"info","message":"SIGINT signal received. Shutting down gracefully...","service":"foundess-caller","timestamp":"2025-04-07 15:04:10"}
+{"level":"info","message":"Stopping contact monitor service...","service":"foundess-caller","timestamp":"2025-04-07 15:04:10"}
+{"level":"info","message":"Contact monitor service stopped. Cleared 0 pending delayed calls.","service":"foundess-caller","timestamp":"2025-04-07 15:04:10"}
+{"level":"info","message":"Disconnected from MongoDB.","service":"foundess-caller","timestamp":"2025-04-07 15:04:10"}
+{"level":"info","message":"Connected to MongoDB successfully","service":"foundess-caller","timestamp":"2025-04-07 15:04:14"}
+{"level":"info","message":"Setting up automated call scheduler","service":"foundess-caller","timestamp":"2025-04-07 15:04:14"}
+{"level":"info","message":"Foundess Caller application started successfully","service":"foundess-caller","timestamp":"2025-04-07 15:04:14"}
+{"level":"info","message":"Attempting to initialize contact monitor...","service":"foundess-caller","timestamp":"2025-04-07 15:04:14"}
+{"level":"info","message":"Start attempt check: isMonitorRunning=false, monitorConfig.enabled=false, force=false","service":"foundess-caller","timestamp":"2025-04-07 15:04:14"}
+{"level":"warn","message":"Monitor service skipping start attempt. Running: false, Enabled: false, Force: false","service":"foundess-caller","timestamp":"2025-04-07 15:04:14"}
+{"level":"info","message":"Server started on port 3000","service":"foundess-caller","timestamp":"2025-04-07 15:04:14"}
+{"level":"info","message":"SIGINT signal received. Shutting down gracefully...","service":"foundess-caller","timestamp":"2025-04-07 15:08:23"}
+{"level":"info","message":"Stopping contact monitor service...","service":"foundess-caller","timestamp":"2025-04-07 15:08:23"}
+{"level":"info","message":"Contact monitor service stopped. Cleared 0 pending delayed calls.","service":"foundess-caller","timestamp":"2025-04-07 15:08:23"}
+{"level":"info","message":"Connected to MongoDB successfully","service":"foundess-caller","timestamp":"2025-04-07 15:08:28"}
+{"level":"info","message":"Setting up automated call scheduler","service":"foundess-caller","timestamp":"2025-04-07 15:08:28"}
+{"level":"info","message":"Foundess Caller application started successfully","service":"foundess-caller","timestamp":"2025-04-07 15:08:28"}
+{"level":"info","message":"Attempting to initialize contact monitor...","service":"foundess-caller","timestamp":"2025-04-07 15:08:28"}
+{"level":"info","message":"Start attempt check: isMonitorRunning=false, monitorConfig.enabled=true, force=false","service":"foundess-caller","timestamp":"2025-04-07 15:08:28"}
+{"level":"info","message":"Attempting to start contact monitor service...","service":"foundess-caller","timestamp":"2025-04-07 15:08:28"}
+{"level":"info","message":"MongoDB Change Stream watcher connection initiated.","service":"foundess-caller","timestamp":"2025-04-07 15:08:28"}
+{"level":"info","message":"Server started on port 3000","service":"foundess-caller","timestamp":"2025-04-07 15:08:28"}
+{"level":"info","message":"Change stream resumed/started successfully.","service":"foundess-caller","timestamp":"2025-04-07 15:08:28"}
+{"level":"info","message":"Starting initial scan for unprocessed contacts...","service":"foundess-caller","timestamp":"2025-04-07 15:08:28"}
+{"level":"info","message":"Initial scan completed. Processed approx 0 contacts.","service":"foundess-caller","timestamp":"2025-04-07 15:08:28"}
+{"level":"info","message":"Connected to MongoDB successfully","service":"foundess-caller","timestamp":"2025-04-07 15:14:24"}
+{"level":"info","message":"Setting up automated call scheduler","service":"foundess-caller","timestamp":"2025-04-07 15:14:24"}
+{"level":"info","message":"Foundess Caller application started successfully","service":"foundess-caller","timestamp":"2025-04-07 15:14:24"}
+{"level":"info","message":"Attempting to initialize contact monitor...","service":"foundess-caller","timestamp":"2025-04-07 15:14:24"}
+{"level":"info","message":"Start attempt check: isMonitorRunning=false, monitorConfig.enabled=true, force=false","service":"foundess-caller","timestamp":"2025-04-07 15:14:24"}
+{"level":"info","message":"Attempting to start contact monitor service...","service":"foundess-caller","timestamp":"2025-04-07 15:14:24"}
+{"level":"info","message":"MongoDB Change Stream watcher connection initiated.","service":"foundess-caller","timestamp":"2025-04-07 15:14:24"}
+{"level":"info","message":"Server started on port 3000","service":"foundess-caller","timestamp":"2025-04-07 15:14:24"}
+{"level":"info","message":"Change stream resumed/started successfully.","service":"foundess-caller","timestamp":"2025-04-07 15:14:24"}
+{"level":"info","message":"Starting initial scan for unprocessed contacts...","service":"foundess-caller","timestamp":"2025-04-07 15:14:24"}
+{"level":"info","message":"Initial scan completed. Processed approx 0 contacts.","service":"foundess-caller","timestamp":"2025-04-07 15:14:24"}
+{"level":"info","message":"SIGINT signal received. Shutting down gracefully...","service":"foundess-caller","timestamp":"2025-04-07 15:14:52"}
+{"level":"info","message":"Connected to MongoDB successfully","service":"foundess-caller","timestamp":"2025-04-07 15:15:13"}
+{"level":"info","message":"Setting up automated call scheduler","service":"foundess-caller","timestamp":"2025-04-07 15:15:13"}
+{"level":"info","message":"Foundess Caller application started successfully","service":"foundess-caller","timestamp":"2025-04-07 15:15:13"}
+{"level":"info","message":"Attempting to initialize contact monitor...","service":"foundess-caller","timestamp":"2025-04-07 15:15:13"}
+{"level":"info","message":"Start attempt check: isMonitorRunning=false, monitorConfig.enabled=true, force=false","service":"foundess-caller","timestamp":"2025-04-07 15:15:13"}
+{"level":"info","message":"Attempting to start contact monitor service...","service":"foundess-caller","timestamp":"2025-04-07 15:15:13"}
+{"level":"info","message":"MongoDB Change Stream watcher connection initiated.","service":"foundess-caller","timestamp":"2025-04-07 15:15:13"}
+{"level":"info","message":"Server started on port 3000","service":"foundess-caller","timestamp":"2025-04-07 15:15:13"}
+{"level":"info","message":"Change stream resumed/started successfully.","service":"foundess-caller","timestamp":"2025-04-07 15:15:14"}
+{"level":"info","message":"Starting initial scan for unprocessed contacts...","service":"foundess-caller","timestamp":"2025-04-07 15:15:14"}
+{"level":"info","message":"Initial scan completed. Processed approx 0 contacts.","service":"foundess-caller","timestamp":"2025-04-07 15:15:14"}
+{"level":"info","message":"SIGINT signal received. Shutting down gracefully...","service":"foundess-caller","timestamp":"2025-04-07 15:17:56"}
+{"level":"info","message":"Connected to MongoDB successfully","service":"foundess-caller","timestamp":"2025-04-07 15:18:29"}
+{"level":"info","message":"Setting up automated call scheduler","service":"foundess-caller","timestamp":"2025-04-07 15:18:29"}
+{"level":"info","message":"Foundess Caller application started successfully","service":"foundess-caller","timestamp":"2025-04-07 15:18:29"}
+{"level":"info","message":"Attempting to initialize contact monitor...","service":"foundess-caller","timestamp":"2025-04-07 15:18:29"}
+{"level":"info","message":"Start attempt check: isMonitorRunning=false, monitorConfig.enabled=true, force=false","service":"foundess-caller","timestamp":"2025-04-07 15:18:29"}
+{"level":"info","message":"Attempting to start contact monitor service...","service":"foundess-caller","timestamp":"2025-04-07 15:18:29"}
+{"level":"info","message":"MongoDB Change Stream watcher connection initiated.","service":"foundess-caller","timestamp":"2025-04-07 15:18:29"}
+{"level":"info","message":"Server started on port 3000","service":"foundess-caller","timestamp":"2025-04-07 15:18:29"}
+{"level":"info","message":"Change stream resumed/started successfully.","service":"foundess-caller","timestamp":"2025-04-07 15:18:30"}
+{"level":"info","message":"Starting initial scan for unprocessed contacts...","service":"foundess-caller","timestamp":"2025-04-07 15:18:30"}
+{"level":"info","message":"Initial scan completed. Processed approx 0 contacts.","service":"foundess-caller","timestamp":"2025-04-07 15:18:30"}
+{"level":"info","message":"SIGINT signal received. Shutting down gracefully...","service":"foundess-caller","timestamp":"2025-04-07 15:23:24"}
+{"level":"info","message":"Connected to MongoDB successfully","service":"foundess-caller","timestamp":"2025-04-07 15:26:10"}
+{"connectedDbName":"foundess","contactModelCollectionName":"foundess.contacts","level":"info","message":"Database Connection Details:","optionsUsed":{"dbName":"foundess","useNewUrlParser":true,"useUnifiedTopology":true},"service":"foundess-caller","timestamp":"2025-04-07 15:26:10","uriUsed":"mongodb+srv://foundess:tjvXkuspOvJW41JC@****"}
+{"collections":["contacts","foundess.contacts"],"level":"info","message":"Available collections:","service":"foundess-caller","timestamp":"2025-04-07 15:26:10"}
+{"count":0,"level":"info","message":"Contact count check:","service":"foundess-caller","timestamp":"2025-04-07 15:26:10"}
+{"level":"info","message":"Setting up automated call scheduler","service":"foundess-caller","timestamp":"2025-04-07 15:26:10"}
+{"level":"info","message":"Foundess Caller application started successfully","service":"foundess-caller","timestamp":"2025-04-07 15:26:10"}
+{"level":"info","message":"Attempting to initialize contact monitor...","service":"foundess-caller","timestamp":"2025-04-07 15:26:10"}
+{"level":"info","message":"Start attempt check: isMonitorRunning=false, monitorConfig.enabled=true, force=false","service":"foundess-caller","timestamp":"2025-04-07 15:26:10"}
+{"level":"info","message":"Attempting to start contact monitor service...","service":"foundess-caller","timestamp":"2025-04-07 15:26:10"}
+{"level":"info","message":"MongoDB Change Stream watcher connection initiated.","service":"foundess-caller","timestamp":"2025-04-07 15:26:10"}
+{"level":"info","message":"Server started on port 3000","service":"foundess-caller","timestamp":"2025-04-07 15:26:10"}
+{"level":"info","message":"Change stream resumed/started successfully.","service":"foundess-caller","timestamp":"2025-04-07 15:26:10"}
+{"level":"info","message":"Starting initial scan for unprocessed contacts...","service":"foundess-caller","timestamp":"2025-04-07 15:26:10"}
+{"level":"info","message":"Initial scan completed. Processed approx 0 contacts.","service":"foundess-caller","timestamp":"2025-04-07 15:26:10"}
+{"level":"warn","message":"MongoDB Change Stream closed unexpectedly. Scheduling restart.","service":"foundess-caller","timestamp":"2025-04-07 15:34:02"}
+{"level":"info","message":"Connected to MongoDB successfully","service":"foundess-caller","timestamp":"2025-04-07 15:38:08"}
+{"connectedDbName":"foundess","contactModelCollectionName":"contacts","level":"info","message":"Database Connection Details:","optionsUsed":{"dbName":"foundess","useNewUrlParser":true,"useUnifiedTopology":true},"service":"foundess-caller","timestamp":"2025-04-07 15:38:08","uriUsed":"mongodb+srv://foundess:tjvXkuspOvJW41JC@****"}
+{"collections":["contacts","calls","foundess.contacts"],"level":"info","message":"Available collections:","service":"foundess-caller","timestamp":"2025-04-07 15:38:08"}
+{"count":1,"level":"info","message":"Contact count check:","service":"foundess-caller","timestamp":"2025-04-07 15:38:08"}
+{"level":"info","message":"Setting up automated call scheduler","service":"foundess-caller","timestamp":"2025-04-07 15:38:08"}
+{"level":"info","message":"Foundess Caller application started successfully","service":"foundess-caller","timestamp":"2025-04-07 15:38:09"}
+{"level":"info","message":"Attempting to initialize contact monitor...","service":"foundess-caller","timestamp":"2025-04-07 15:38:09"}
+{"level":"info","message":"Start attempt check: isMonitorRunning=false, monitorConfig.enabled=true, force=false","service":"foundess-caller","timestamp":"2025-04-07 15:38:09"}
+{"level":"info","message":"Attempting to start contact monitor service...","service":"foundess-caller","timestamp":"2025-04-07 15:38:09"}
+{"level":"info","message":"MongoDB Change Stream watcher connection initiated.","service":"foundess-caller","timestamp":"2025-04-07 15:38:09"}
+{"level":"info","message":"Server started on port 3000","service":"foundess-caller","timestamp":"2025-04-07 15:38:09"}
+{"level":"info","message":"Change stream resumed/started successfully.","service":"foundess-caller","timestamp":"2025-04-07 15:38:09"}
+{"level":"info","message":"Starting initial scan for unprocessed contacts...","service":"foundess-caller","timestamp":"2025-04-07 15:38:09"}
+{"level":"info","message":"Found 1 contacts in current batch.","service":"foundess-caller","timestamp":"2025-04-07 15:38:09"}
+{"contactId":"67f44cf92cd7ec05ac9df264","currentRate":1,"level":"info","message":"Processing contact for calling","phone":"(971)336-4433","service":"foundess-caller","timestamp":"2025-04-07 15:38:09"}
+{"contactId":"67f44cf92cd7ec05ac9df264","level":"info","message":"Initiating call to Duy Nguyen","phone":"+9713364433","service":"foundess-caller","timestamp":"2025-04-07 15:38:09"}
+{"level":"debug","message":"Received change stream event","operationType":"update","service":"foundess-caller","timestamp":"2025-04-07 15:38:09"}
+{"contactId":"67f44cf92cd7ec05ac9df264","level":"debug","message":"Contact from change stream event is not eligible for processing","service":"foundess-caller","timestamp":"2025-04-07 15:38:09"}
+{"contactId":"67f44cf92cd7ec05ac9df264","error":"The number +9713364433 is unverified. Trial accounts may only make calls to verified numbers.","level":"error","message":"Failed to initiate call to Duy Nguyen","service":"foundess-caller","timestamp":"2025-04-07 15:38:09"}
+{"contactId":"67f44cf92cd7ec05ac9df264","errorMessage":"The number +9713364433 is unverified. Trial accounts may only make calls to verified numbers.","errorStack":"Error: The number +9713364433 is unverified. Trial accounts may only make calls to verified numbers.\n    at success (/Users/duy/Documents/foundess-caller/node_modules/twilio/lib/base/Version.js:79:23)\n    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)\n    at async Object.initiateCall (/Users/duy/Documents/foundess-caller/src/services/caller.js:39:18)\n    at async processContact (/Users/duy/Documents/foundess-caller/src/services/contactMonitor.js:74:9)\n    at async scanExistingContacts (/Users/duy/Documents/foundess-caller/src/services/contactMonitor.js:190:17)","level":"error","message":"Error processing contact","service":"foundess-caller","timestamp":"2025-04-07 15:38:09"}
+{"level":"debug","message":"Received change stream event","operationType":"update","service":"foundess-caller","timestamp":"2025-04-07 15:38:09"}
+{"contactId":"67f44cf92cd7ec05ac9df264","level":"info","message":"Contact change detected, processing immediately","service":"foundess-caller","timestamp":"2025-04-07 15:38:09"}
+{"level":"info","message":"Initial scan completed. Processed approx 1 contacts.","service":"foundess-caller","timestamp":"2025-04-07 15:38:09"}
+{"contactId":"67f44cf92cd7ec05ac9df264","currentRate":2,"level":"info","message":"Processing contact for calling","phone":"(971)336-4433","service":"foundess-caller","timestamp":"2025-04-07 15:38:09"}
+{"contactId":"67f44cf92cd7ec05ac9df264","level":"info","message":"Initiating call to Duy Nguyen","phone":"+9713364433","service":"foundess-caller","timestamp":"2025-04-07 15:38:09"}
+{"level":"debug","message":"Received change stream event","operationType":"update","service":"foundess-caller","timestamp":"2025-04-07 15:38:09"}
+{"contactId":"67f44cf92cd7ec05ac9df264","level":"debug","message":"Contact from change stream event is not eligible for processing","service":"foundess-caller","timestamp":"2025-04-07 15:38:09"}
+{"contactId":"67f44cf92cd7ec05ac9df264","error":"The number +9713364433 is unverified. Trial accounts may only make calls to verified numbers.","level":"error","message":"Failed to initiate call to Duy Nguyen","service":"foundess-caller","timestamp":"2025-04-07 15:38:09"}
+{"contactId":"67f44cf92cd7ec05ac9df264","errorMessage":"The number +9713364433 is unverified. Trial accounts may only make calls to verified numbers.","errorStack":"Error: The number +9713364433 is unverified. Trial accounts may only make calls to verified numbers.\n    at success (/Users/duy/Documents/foundess-caller/node_modules/twilio/lib/base/Version.js:79:23)\n    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)\n    at async Object.initiateCall (/Users/duy/Documents/foundess-caller/src/services/caller.js:39:18)\n    at async processContact (/Users/duy/Documents/foundess-caller/src/services/contactMonitor.js:74:9)","level":"error","message":"Error processing contact","service":"foundess-caller","timestamp":"2025-04-07 15:38:09"}
+{"level":"debug","message":"Received change stream event","operationType":"update","service":"foundess-caller","timestamp":"2025-04-07 15:38:09"}
+{"contactId":"67f44cf92cd7ec05ac9df264","level":"info","message":"Contact change detected, processing immediately","service":"foundess-caller","timestamp":"2025-04-07 15:38:10"}
+{"contactId":"67f44cf92cd7ec05ac9df264","currentRate":3,"level":"info","message":"Processing contact for calling","phone":"(971)336-4433","service":"foundess-caller","timestamp":"2025-04-07 15:38:10"}
+{"contactId":"67f44cf92cd7ec05ac9df264","level":"info","message":"Initiating call to Duy Nguyen","phone":"+9713364433","service":"foundess-caller","timestamp":"2025-04-07 15:38:10"}
+{"level":"debug","message":"Received change stream event","operationType":"update","service":"foundess-caller","timestamp":"2025-04-07 15:38:10"}
+{"contactId":"67f44cf92cd7ec05ac9df264","level":"debug","message":"Contact from change stream event is not eligible for processing","service":"foundess-caller","timestamp":"2025-04-07 15:38:10"}
+{"contactId":"67f44cf92cd7ec05ac9df264","error":"The number +9713364433 is unverified. Trial accounts may only make calls to verified numbers.","level":"error","message":"Failed to initiate call to Duy Nguyen","service":"foundess-caller","timestamp":"2025-04-07 15:38:10"}
+{"contactId":"67f44cf92cd7ec05ac9df264","errorMessage":"The number +9713364433 is unverified. Trial accounts may only make calls to verified numbers.","errorStack":"Error: The number +9713364433 is unverified. Trial accounts may only make calls to verified numbers.\n    at success (/Users/duy/Documents/foundess-caller/node_modules/twilio/lib/base/Version.js:79:23)\n    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)\n    at async Object.initiateCall (/Users/duy/Documents/foundess-caller/src/services/caller.js:39:18)\n    at async processContact (/Users/duy/Documents/foundess-caller/src/services/contactMonitor.js:74:9)","level":"error","message":"Error processing contact","service":"foundess-caller","timestamp":"2025-04-07 15:38:10"}
+{"level":"debug","message":"Received change stream event","operationType":"update","service":"foundess-caller","timestamp":"2025-04-07 15:38:10"}
+{"contactId":"67f44cf92cd7ec05ac9df264","level":"info","message":"Contact change detected, processing immediately","service":"foundess-caller","timestamp":"2025-04-07 15:38:10"}
+{"contactId":"67f44cf92cd7ec05ac9df264","currentRate":4,"level":"info","message":"Processing contact for calling","phone":"(971)336-4433","service":"foundess-caller","timestamp":"2025-04-07 15:38:10"}
+{"contactId":"67f44cf92cd7ec05ac9df264","level":"info","message":"Initiating call to Duy Nguyen","phone":"+9713364433","service":"foundess-caller","timestamp":"2025-04-07 15:38:10"}
+{"level":"debug","message":"Received change stream event","operationType":"update","service":"foundess-caller","timestamp":"2025-04-07 15:38:10"}
+{"contactId":"67f44cf92cd7ec05ac9df264","level":"debug","message":"Contact from change stream event is not eligible for processing","service":"foundess-caller","timestamp":"2025-04-07 15:38:10"}
+{"contactId":"67f44cf92cd7ec05ac9df264","error":"The number +9713364433 is unverified. Trial accounts may only make calls to verified numbers.","level":"error","message":"Failed to initiate call to Duy Nguyen","service":"foundess-caller","timestamp":"2025-04-07 15:38:10"}
+{"contactId":"67f44cf92cd7ec05ac9df264","errorMessage":"The number +9713364433 is unverified. Trial accounts may only make calls to verified numbers.","errorStack":"Error: The number +9713364433 is unverified. Trial accounts may only make calls to verified numbers.\n    at success (/Users/duy/Documents/foundess-caller/node_modules/twilio/lib/base/Version.js:79:23)\n    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)\n    at async Object.initiateCall (/Users/duy/Documents/foundess-caller/src/services/caller.js:39:18)\n    at async processContact (/Users/duy/Documents/foundess-caller/src/services/contactMonitor.js:74:9)","level":"error","message":"Error processing contact","service":"foundess-caller","timestamp":"2025-04-07 15:38:10"}
+{"level":"debug","message":"Received change stream event","operationType":"update","service":"foundess-caller","timestamp":"2025-04-07 15:38:10"}
+{"contactId":"67f44cf92cd7ec05ac9df264","level":"info","message":"Contact change detected, processing immediately","service":"foundess-caller","timestamp":"2025-04-07 15:38:10"}
+{"contactId":"67f44cf92cd7ec05ac9df264","currentRate":5,"level":"info","message":"Processing contact for calling","phone":"(971)336-4433","service":"foundess-caller","timestamp":"2025-04-07 15:38:10"}
+{"contactId":"67f44cf92cd7ec05ac9df264","level":"info","message":"Initiating call to Duy Nguyen","phone":"+9713364433","service":"foundess-caller","timestamp":"2025-04-07 15:38:10"}
+{"level":"debug","message":"Received change stream event","operationType":"update","service":"foundess-caller","timestamp":"2025-04-07 15:38:10"}
+{"contactId":"67f44cf92cd7ec05ac9df264","level":"debug","message":"Contact from change stream event is not eligible for processing","service":"foundess-caller","timestamp":"2025-04-07 15:38:10"}
+{"contactId":"67f44cf92cd7ec05ac9df264","error":"The number +9713364433 is unverified. Trial accounts may only make calls to verified numbers.","level":"error","message":"Failed to initiate call to Duy Nguyen","service":"foundess-caller","timestamp":"2025-04-07 15:38:10"}
+{"contactId":"67f44cf92cd7ec05ac9df264","errorMessage":"The number +9713364433 is unverified. Trial accounts may only make calls to verified numbers.","errorStack":"Error: The number +9713364433 is unverified. Trial accounts may only make calls to verified numbers.\n    at success (/Users/duy/Documents/foundess-caller/node_modules/twilio/lib/base/Version.js:79:23)\n    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)\n    at async Object.initiateCall (/Users/duy/Documents/foundess-caller/src/services/caller.js:39:18)\n    at async processContact (/Users/duy/Documents/foundess-caller/src/services/contactMonitor.js:74:9)","level":"error","message":"Error processing contact","service":"foundess-caller","timestamp":"2025-04-07 15:38:10"}
+{"level":"info","message":"SIGINT signal received. Shutting down gracefully...","service":"foundess-caller","timestamp":"2025-04-07 15:38:11"}
+{"level":"info","message":"Connected to MongoDB successfully","service":"foundess-caller","timestamp":"2025-04-07 16:28:31"}
+{"connectedDbName":"foundess","contactModelCollectionName":"contacts","level":"info","message":"Database Connection Details:","optionsUsed":{"dbName":"foundess","useNewUrlParser":true,"useUnifiedTopology":true},"service":"foundess-caller","timestamp":"2025-04-07 16:28:31","uriUsed":"mongodb+srv://foundess:tjvXkuspOvJW41JC@****"}
+{"collections":["contacts","calls","foundess.contacts"],"level":"info","message":"Available collections:","service":"foundess-caller","timestamp":"2025-04-07 16:28:32"}
+{"count":1,"level":"info","message":"Contact count check:","service":"foundess-caller","timestamp":"2025-04-07 16:28:32"}
+{"level":"info","message":"Setting up automated call scheduler","service":"foundess-caller","timestamp":"2025-04-07 16:28:32"}
+{"level":"info","message":"Foundess Caller application started successfully","service":"foundess-caller","timestamp":"2025-04-07 16:28:32"}
+{"level":"info","message":"Attempting to initialize contact monitor...","service":"foundess-caller","timestamp":"2025-04-07 16:28:32"}
+{"level":"info","message":"Start attempt check: isMonitorRunning=false, monitorConfig.enabled=true, force=false","service":"foundess-caller","timestamp":"2025-04-07 16:28:32"}
+{"level":"info","message":"Attempting to start contact monitor service...","service":"foundess-caller","timestamp":"2025-04-07 16:28:32"}
+{"level":"info","message":"MongoDB Change Stream watcher connection initiated.","service":"foundess-caller","timestamp":"2025-04-07 16:28:32"}
+{"level":"info","message":"Server started on port 3000","service":"foundess-caller","timestamp":"2025-04-07 16:28:32"}
+{"level":"info","message":"Change stream resumed/started successfully.","service":"foundess-caller","timestamp":"2025-04-07 16:28:32"}
+{"level":"info","message":"Starting initial scan for unprocessed contacts...","service":"foundess-caller","timestamp":"2025-04-07 16:28:32"}
+{"level":"info","message":"Found 1 contacts in current batch.","service":"foundess-caller","timestamp":"2025-04-07 16:28:32"}
+{"contactId":"67f44cf92cd7ec05ac9df264","currentRate":1,"level":"info","message":"Processing contact for calling","phone":"(971)336-4433","service":"foundess-caller","timestamp":"2025-04-07 16:28:32"}
+{"contactId":"67f44cf92cd7ec05ac9df264","formattedPhone":"+19713364433","level":"info","message":"Initiating call to Duy Nguyen","service":"foundess-caller","timestamp":"2025-04-07 16:28:32"}
+{"level":"debug","message":"Received change stream event","operationType":"update","service":"foundess-caller","timestamp":"2025-04-07 16:28:32"}
+{"contactId":"67f44cf92cd7ec05ac9df264","level":"debug","message":"Contact from change stream event is not eligible for processing","service":"foundess-caller","timestamp":"2025-04-07 16:28:32"}
+{"callSid":"CA803f2ad3d0eeefef932ed5f0bf7855dd","level":"info","message":"Call initiated","service":"foundess-caller","timestamp":"2025-04-07 16:28:33"}
+{"callSid":"CA803f2ad3d0eeefef932ed5f0bf7855dd","level":"info","message":"Updated contact 67f44cf92cd7ec05ac9df264 with call status initiated","service":"foundess-caller","timestamp":"2025-04-07 16:28:33"}
+{"level":"debug","message":"Received change stream event","operationType":"update","service":"foundess-caller","timestamp":"2025-04-07 16:28:33"}
+{"contactId":"67f44cf92cd7ec05ac9df264","level":"debug","message":"Contact from change stream event is not eligible for processing","service":"foundess-caller","timestamp":"2025-04-07 16:28:33"}
+{"callSid":"CA803f2ad3d0eeefef932ed5f0bf7855dd","contactId":"67f44cf92cd7ec05ac9df264","level":"info","message":"Created new call record","service":"foundess-caller","timestamp":"2025-04-07 16:28:33"}
+{"contactId":"67f44cf92cd7ec05ac9df264","level":"info","message":"Successfully initiated call and marked contact as processed","service":"foundess-caller","timestamp":"2025-04-07 16:28:33"}
+{"level":"debug","message":"Received change stream event","operationType":"update","service":"foundess-caller","timestamp":"2025-04-07 16:28:33"}
+{"contactId":"67f44cf92cd7ec05ac9df264","level":"debug","message":"Contact from change stream event is not eligible for processing","service":"foundess-caller","timestamp":"2025-04-07 16:28:33"}
+{"level":"info","message":"Initial scan completed. Processed approx 1 contacts.","service":"foundess-caller","timestamp":"2025-04-07 16:28:33"}
+{"level":"info","message":"SIGINT signal received. Shutting down gracefully...","service":"foundess-caller","timestamp":"2025-04-07 16:28:42"}
