@@ -24,7 +24,7 @@ Voice AI calling agent for Foundess that autonomously calls potential clients an
 ### 1. Clone the repository
 
 ```bash
-git clone https://github.com/yourusername/foundess-caller.git
+git clone https://github.com/yudduy/foundess-caller.git
 cd foundess-caller
 ```
 
