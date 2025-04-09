@@ -12,12 +12,59 @@ const speechToText = require('../services/speechToText');
 const textToSpeech = require('../services/textToSpeech');
 const transcriptService = require('../services/transcript');
 const telephonyConfig = require('../config/telephony');
+const aiConfig = require('../config/ai'); // Import AI config for Hyperbolic check
 const Call = require('../models/call');
 const Contact = require('../models/contact');
 const mongoose = require('mongoose');
 const contactMonitor = require('../services/contactMonitor'); // Import monitor service
 const { formatPhoneForCalling } = require('../utils/phoneFormatter'); // Import formatter
 const { isSafeToCall } = require('../utils/phoneSafety'); // Import safety check
+
+// Helper to check if Groq STT should be preferred and is possible
+const shouldUseGroq = (recordingUrl) => {
+  return aiConfig.speechPreferences.sttPreference === 'groq' && 
+         aiConfig.groqConfig.enabled && // Check if Groq is enabled via config
+         aiConfig.speechPreferences.enableRecording && 
+         recordingUrl;
+};
+
+// Helper to check if Whisper STT should be preferred and is possible (kept for flexibility)
+// const shouldUseWhisper = (recordingUrl) => { ... }; // Keep commented if removing OpenAI STT completely
+
+// --- Helper Function to Add Speech to TwiML ---
+async function addSpeechToResponse(twimlResponse, text) {
+  const formattedText = textToSpeech.formatTextForSpeech(text);
+  
+  // Try Hyperbolic first
+  if (aiConfig.hyperbolic.enabled) {
+    try {
+      const audioUrl = await textToSpeech.generateHyperbolicAudio(formattedText); // Pass formatted text
+      if (audioUrl) {
+        // IMPORTANT: Construct the full URL for Twilio to access
+        const fullAudioUrl = `${process.env.WEBHOOK_BASE_URL}${audioUrl}`; 
+        logger.debug('Using Hyperbolic TTS via <Play>', { url: fullAudioUrl });
+        twimlResponse.play({}, fullAudioUrl); // Play the cached audio file
+        return; // Exit if Hyperbolic succeeded
+      } else {
+        logger.warn('Hyperbolic TTS generation failed or disabled, falling back to Twilio TTS');
+      }
+    } catch (hyperbolicError) {
+      logger.error('Error during Hyperbolic TTS generation, falling back to Twilio TTS', { error: hyperbolicError.message });
+    }
+  } else {
+      logger.debug('Hyperbolic TTS is not enabled, using Twilio TTS.');
+  }
+  
+  // Fallback to Twilio TTS using <Say>
+  logger.debug('Using Twilio TTS via <Say>');
+  const twilioOptions = textToSpeech.getTwilioTtsOptions();
+  // Split long text for Twilio <Say>
+  const chunks = textToSpeech.splitIntoSpeechChunks(formattedText, 500); // Use existing splitter
+  chunks.forEach(chunk => {
+     twimlResponse.say(twilioOptions, chunk);
+  });
+}
+// --- End Helper Function ---
 
 /**
  * Webhook called when call is connected
@@ -126,9 +173,6 @@ router.post('/connect', async (req, res) => {
     logger.debug('[/connect] Getting initial greeting...', { callSid });
     const greeting = conversationService.getInitialGreeting(contact); // Pass the found/created contact
     
-    logger.debug('[/connect] Formatting greeting for speech...', { callSid });
-    const formattedGreeting = textToSpeech.formatTextForSpeech(greeting);
-    
      logger.debug('[/connect] Adding greeting to transcript (if not test call)...', { callSid });
     if (!isTestCall && contact._id && mongoose.Types.ObjectId.isValid(contact._id)) {
         try {
@@ -140,11 +184,9 @@ router.post('/connect', async (req, res) => {
          logger.warn('[/connect] Skipping adding greeting to transcript due to invalid/missing contact ID', { callSid, contactId: contact?._id });
     }
     
-    logger.debug('[/connect] Generating full TwiML...', { callSid });
-    // --- Original TwiML Generation --- 
-    response.say({
-      voice: telephonyConfig.voice || 'Polly.Joanna', // Use config, provide default
-    }, formattedGreeting);
+    logger.debug('[/connect] Generating initial TwiML with greeting...', { callSid });
+    // --- Generate TwiML using Helper ---
+    await addSpeechToResponse(response, greeting); // Use the helper for the greeting
     
     response.gather({
       input: ['speech'],
@@ -153,23 +195,17 @@ router.post('/connect', async (req, res) => {
       action: '/api/calls/respond',
       method: 'POST',
       language: telephonyConfig.language || 'en-US',
+      actionOnEmptyResult: true, // Ensure action is called even if no speech detected
     });
     
-    // Fallback if first gather fails
-    response.say({ voice: telephonyConfig.voice || 'Polly.Joanna' }, 'I didn\'t hear anything. Can you please speak again?');
-    response.gather({
-       input: ['speech'],
-       speechTimeout: telephonyConfig.speechTimeout || 'auto',
-       speechModel: telephonyConfig.speechModel || 'phone_call',
-       action: '/api/calls/respond',
-       method: 'POST',
-       language: telephonyConfig.language || 'en-US',
-    });
+    // // Fallback if first gather fails - Now handled by actionOnEmptyResult in gather and /respond logic
+    // response.say({ voice: telephonyConfig.voice || 'Polly.Joanna' }, 'I didn\\'t hear anything. Can you please speak again?');
+    // response.gather({ ... }); // Remove redundant gather
     
-    // Fallback if second gather fails
-    response.say({ voice: telephonyConfig.voice || 'Polly.Joanna' }, 'I\'m sorry, but I still can\'t hear you. I\'ll have someone from our team call you back soon. Thank you!');
-    response.hangup();
-    // --- End Original TwiML Generation --- 
+    // // Fallback if second gather fails - Now handled by /respond logic
+    // response.say({ voice: telephonyConfig.voice || 'Polly.Joanna' }, 'I\\'m sorry, but I still can\\'t hear you. I\\'ll have someone from our team call you back soon. Thank you!');
+    // response.hangup();
+    // --- End TwiML Generation --- 
     
     const twimlString = response.toString();
     logger.debug('[/connect] Sending TwiML:', { twiml: twimlString }); // Log TwiML
@@ -201,73 +237,117 @@ router.post('/connect', async (req, res) => {
 router.post('/respond', async (req, res) => {
   const callSid = req.body.CallSid;
   const userInput = req.body.SpeechResult;
+  const recordingUrl = req.body.RecordingUrl; // Ensure Twilio is sending this
+  const twilioConfidence = req.body.Confidence;
   
   try {
-    logger.info('Received user speech', { 
+    // Log more details relevant to STT choice
+    logger.info('[/respond] Received response webhook', { 
       callSid, 
-      input: userInput ? userInput.substring(0, 50) + (userInput.length > 50 ? '...' : '') : 'none'
+      sttPreference: aiConfig.speechPreferences.sttPreference,
+      groqEnabled: aiConfig.groqConfig.enabled,
+      recordingEnabled: aiConfig.speechPreferences.enableRecording,
+      userInputProvided: !!userInput,
+      recordingUrlProvided: !!recordingUrl,
+      twilioConfidence,
+      inputPreview: userInput ? userInput.substring(0, 50) + (userInput.length > 50 ? '...' : '') : 'none'
     });
     
     const response = new VoiceResponse();
+    let processedInput = null;
+    let transcriptionSource = 'none';
+
+    // --- Speech Input Handling (Preference: Groq > Twilio > Empty) ---
+    if (shouldUseGroq(recordingUrl)) {
+       logger.debug('[/respond] Attempting Groq transcription (preference met)...', { callSid });
+       const groqResult = await speechToText.transcribeWithGroq(recordingUrl); // Call Groq function
+       if (groqResult && speechToText.validateSpeechResult(groqResult)) {
+         logger.info('[/respond] Using Groq transcription result.', { callSid, textLength: groqResult.length });
+         processedInput = groqResult;
+         transcriptionSource = 'groq';
+       } else {
+         logger.warn('[/respond] Groq transcription failed or result was invalid. Falling back...', { callSid });
+         // Fall through to try Twilio's result
+       }
+    }
+    // --- TODO: Add logic here if you want to support OpenAI Whisper as a secondary preference ---
+    // else if (shouldUseWhisper(recordingUrl)) { ... }
     
-    // Validate speech result
-    if (!userInput || !speechToText.validateSpeechResult(userInput)) {
-      response.say({
-        voice: telephonyConfig.voice,
-      }, 'I\'m sorry, I didn\'t catch that. Could you please repeat?');
-      
-      response.gather({
-        input: ['speech'],
-        speechTimeout: telephonyConfig.speechTimeout,
-        speechModel: telephonyConfig.speechModel,
-        action: '/api/calls/respond',
-        method: 'POST',
-        language: telephonyConfig.language,
-      });
-      
-      res.type('text/xml');
-      return res.send(response.toString());
+    // If Groq wasn't preferred, wasn't possible, or failed, try Twilio
+    if (!processedInput && userInput) { 
+        if (speechToText.validateSpeechResult(userInput, twilioConfidence)) {
+            logger.info('[/respond] Using Twilio SpeechResult as input.', { callSid, confidence: twilioConfidence });
+            processedInput = speechToText.processTwilioSpeechResult(userInput);
+            transcriptionSource = 'twilio';
+        } else {
+            logger.warn('[/respond] Twilio SpeechResult was invalid or below confidence.', { callSid, confidence: twilioConfidence });
+            // Fall through to handle no input
+        }
+    } else if (!processedInput && !userInput) {
+      logger.debug('[/respond] No user input from Twilio either.', { callSid });
     }
     
-    // Process speech result
-    const processedInput = speechToText.processTwilioSpeechResult(userInput);
+    // Handle cases where neither method provided valid input
+    if (!processedInput) { 
+        logger.warn('[/respond] No valid speech input received after checking preferred/fallback STT.', { callSid, preference: aiConfig.speechPreferences.sttPreference });
+        await addSpeechToResponse(response, "I'm sorry, I didn't catch that. Could you please repeat?");
+        response.gather({
+          input: ['speech'],
+          speechTimeout: telephonyConfig.speechTimeout || 'auto',
+          speechModel: telephonyConfig.speechModel || 'phone_call',
+          action: '/api/calls/respond',
+          method: 'POST',
+          language: telephonyConfig.language || 'en-US',
+          actionOnEmptyResult: true,
+        });
+        res.type('text/xml');
+        return res.send(response.toString());
+    }
+    // --- End Speech Input Handling ---
+
+    // We should have `processedInput` now if we didn't return early
+    logger.debug('[/respond] Proceeding with processed input:', { callSid, input: processedInput, source: transcriptionSource });
     
+    // Add user input to transcript (ensure we have contactId)
+    const call = await Call.findOne({ callSid }).lean(); // Find call to get contactId
+    if (call && call.contactId && mongoose.Types.ObjectId.isValid(call.contactId)) {
+       try {
+           await transcriptService.addTranscriptEntry(callSid, 'user', processedInput);
+       } catch (transcriptError) {
+           logger.error('[/respond] Error adding user input to transcript', { callSid, error: transcriptError.message });
+       }
+    } else {
+       logger.warn('[/respond] Skipping adding user input to transcript - call or contactId missing/invalid', { callSid, callFound: !!call, contactId: call?.contactId });
+    }
+
     // Get AI response (now returns an object)
     const { text: aiResponseText, shouldHangup } = await conversationService.getResponse(processedInput, callSid);
     
     // Ensure we have a valid response before proceeding
     if (!aiResponseText || aiResponseText.trim().length === 0) {
-      logger.warn('Received empty AI response', { callSid });
+      logger.warn('[/respond] Received empty AI response', { callSid });
       // Ask user to repeat or indicate an issue
-      response.say({
-        voice: telephonyConfig.voice,
-      }, "I'm sorry, I had trouble processing that. Could you please say that again?");
+      await addSpeechToResponse(response, "I'm sorry, I had trouble processing that. Could you please say that again?");
       
-      response.gather({
-        input: ['speech'],
-        speechTimeout: telephonyConfig.speechTimeout,
-        speechModel: telephonyConfig.speechModel,
-        action: '/api/calls/respond',
-        method: 'POST',
-        language: telephonyConfig.language,
-      });
+      response.gather({ /* ... gather options ... */ }); // Reuse gather options
       
       res.type('text/xml');
       return res.send(response.toString());
     }
+
+    // Add AI response to transcript
+    if (call && call.contactId && mongoose.Types.ObjectId.isValid(call.contactId)) {
+       try {
+           await transcriptService.addTranscriptEntry(callSid, 'assistant', aiResponseText);
+       } catch (transcriptError) {
+           logger.error('[/respond] Error adding AI response to transcript', { callSid, error: transcriptError.message });
+       }
+    } else {
+        logger.warn('[/respond] Skipping adding AI response to transcript - call or contactId missing/invalid', { callSid, callFound: !!call, contactId: call?.contactId });
+    }
     
-    // Format for speech - Use a different name to avoid conflict
-    const formattedAiText = textToSpeech.formatTextForSpeech(aiResponseText);
-    
-    // Check if response needs to be split (Twilio has limits)
-    const responseChunks = textToSpeech.splitIntoSpeechChunks(formattedAiText);
-    
-    // Speak the AI response
-    responseChunks.forEach(chunk => {
-      response.say({
-        voice: telephonyConfig.voice || 'Polly.Joanna',
-      }, chunk);
-    });
+    // --- Speak the AI response using Helper ---
+    await addSpeechToResponse(response, aiResponseText);
     
     // --- Decide whether to Hangup or Gather --- 
     if (shouldHangup) {
@@ -283,22 +363,16 @@ router.post('/respond', async (req, res) => {
           action: '/api/calls/respond',
           method: 'POST',
           language: telephonyConfig.language || 'en-US',
+          actionOnEmptyResult: true, // Important for handling silence
         });
         
-        // Fallback if gather fails (optional, could be removed if hangup logic is reliable)
-        response.say({ voice: telephonyConfig.voice || 'Polly.Joanna' }, 'Are you still there? Could you please respond?');
-        response.gather({
-           input: ['speech'],
-           speechTimeout: telephonyConfig.speechTimeout || 'auto',
-           speechModel: telephonyConfig.speechModel || 'phone_call',
-           action: '/api/calls/respond',
-           method: 'POST',
-           language: telephonyConfig.language || 'en-US',
-        });
+        // // Fallback if gather fails - Removed, handled by subsequent /respond call with empty input
+        // response.say({ voice: telephonyConfig.voice || 'Polly.Joanna' }, 'Are you still there? Could you please respond?');
+        // response.gather({ ... });
         
-        // Final fallback before hangup if still no input
-        response.say({ voice: telephonyConfig.voice || 'Polly.Joanna' }, 'I\'m sorry, but I haven\'t heard from you. I\'ll have someone from our team follow up with you soon. Thank you for your time!');
-        response.hangup();
+        // // Final fallback - Removed, handled by subsequent /respond call with empty input leading to hangup
+        // response.say({ voice: telephonyConfig.voice || 'Polly.Joanna' }, 'I\\'m sorry, but I haven\\'t heard from you. I\\'ll have someone from our team follow up with you soon. Thank you for your time!');
+        // response.hangup();
     }
     // --- End Hangup/Gather Decision ---
     

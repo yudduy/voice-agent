@@ -44,7 +44,7 @@ cp .env.example .env
 
 Edit the `.env` file with your credentials:
 
-```
+```bash
 # MongoDB
 MONGODB_URI=mongodb+srv://your-mongodb-connection-string
 
@@ -56,6 +56,21 @@ TWILIO_PHONE_NUMBER=+1234567890
 # OpenAI
 OPENAI_API_KEY=your_openai_api_key
 OPENAI_MODEL=gpt-4o
+
+# Hyperbolic AI (Optional - for enhanced TTS)
+# Used if enabling Hyperbolic Text-to-Speech feature
+HYPERBOLIC_API_KEY=your_hyperbolic_api_key
+
+# Speech Service Preferences
+# Ensure Twilio call recording is enabled if using Whisper
+ENABLE_RECORDING=true 
+# Choose preferred STT service: 'whisper' or 'twilio'
+SPEECH_RECOGNITION_PREFERENCE=whisper
+
+# Groq API for Speech-to-Text (Optional, requires SPEECH_RECOGNITION_PREFERENCE='groq')
+GROQ_API_KEY=your_groq_api_key
+GROQ_WHISPER_MODEL=whisper-large-v3 # Or whisper-large-v3-turbo
+ENABLE_GROQ_TRANSCRIPTION=true
 
 # Server config
 PORT=3000

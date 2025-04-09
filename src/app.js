@@ -12,6 +12,7 @@ const path = require('path');
 const fs = require('fs');
 const contactMonitor = require('./services/contactMonitor');
 const voiceMonitor = require('./utils/voiceMonitor');
+const rateLimit = require('express-rate-limit');
 
 // Create Express app
 const app = express();
@@ -31,6 +32,19 @@ if (!fs.existsSync(cacheDir)) {
 // Middleware
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+
+// Serve cached TTS audio files
+const ttsCachePath = path.join(__dirname, '..', 'public', 'tts-cache');
+app.use('/tts-cache', express.static(ttsCachePath));
+
+// Rate limiting
+const apiLimiter = rateLimit({
+	windowMs: 15 * 60 * 1000, // 15 minutes
+	max: 100, // Limit each IP to 100 requests per `window` (here, per 15 minutes)
+	standardHeaders: true, // Return rate limit info in the `RateLimit-*` headers
+	legacyHeaders: false, // Disable the `X-RateLimit-*` headers
+});
+app.use('/api/', apiLimiter); // Apply the rate limiting middleware to API routes
 
 // Validate Twilio requests (uncomment and configure in production)
 /*

@@ -9,7 +9,7 @@ const databaseService = require('./database');
 
 // Initialize OpenAI client
 const openai = new OpenAI({
-  apiKey: aiConfig.openai.apiKey
+  apiKey: aiConfig.openAI.apiKey
 });
 
 // Store conversation data (history and contact) by call SID
@@ -124,10 +124,10 @@ const getResponse = async (userInput, callSid) => {
     
     // --- OpenAI API Call --- 
     const completion = await openai.chat.completions.create({
-      model: aiConfig.openai.model,
+      model: aiConfig.openAI.model,
       messages: messagesPayload,
-      temperature: aiConfig.openai.temperature,
-      max_tokens: aiConfig.openai.maxTokens,
+      temperature: aiConfig.openAI.temperature,
+      max_tokens: aiConfig.openAI.maxTokens,
     });
     // --- End OpenAI API Call ---
     
