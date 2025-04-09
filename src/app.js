@@ -6,10 +6,12 @@ const express = require('express');
 const database = require('./services/database');
 const scheduler = require('./services/scheduler');
 const twilioWebhooks = require('./webhooks/twilioWebhooks');
+const audioWebhooks = require('./webhooks/audioWebhooks');
 const logger = require('./utils/logger');
 const path = require('path');
 const fs = require('fs');
 const contactMonitor = require('./services/contactMonitor');
+const voiceMonitor = require('./utils/voiceMonitor');
 
 // Create Express app
 const app = express();
@@ -18,6 +20,12 @@ const app = express();
 const logsDir = path.join(__dirname, '..', 'logs');
 if (!fs.existsSync(logsDir)) {
   fs.mkdirSync(logsDir, { recursive: true });
+}
+
+// Create cache directory if it doesn't exist
+const cacheDir = path.join(__dirname, '..', 'cache');
+if (!fs.existsSync(cacheDir)) {
+  fs.mkdirSync(cacheDir, { recursive: true });
 }
 
 // Middleware
@@ -32,6 +40,7 @@ app.use('/api/calls', validateRequest);
 
 // Register webhook routes
 app.use('/api/calls', twilioWebhooks);
+app.use('/api/calls/audio', audioWebhooks);
 
 // Basic web interface for admin (optional)
 app.get('/', (req, res) => {
@@ -63,6 +72,24 @@ app.get('/', (req, res) => {
 // Health check endpoint
 app.get('/health', (req, res) => {
   res.status(200).send('OK');
+});
+
+// Monitoring Endpoint
+app.get('/voice-metrics', (req, res) => {
+  // Basic security: Disable in production unless specific auth is added
+  if (process.env.NODE_ENV === 'production') {
+     // In a real production scenario, you might check for an admin user, specific IP, or use middleware
+     logger.warn('Attempted access to /voice-metrics in production');
+     return res.status(403).json({ message: 'Access forbidden in production environment.' });
+  }
+  
+  try {
+      const summary = voiceMonitor.getMetricsSummary();
+      res.json(summary);
+  } catch (error) {
+      logger.error('Error retrieving voice metrics', { error: error.message });
+      res.status(500).json({ message: 'Error retrieving metrics' });
+  }
 });
 
 // Error handling middleware
