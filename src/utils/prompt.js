@@ -3,6 +3,7 @@
  */
 const aiConfig = require('../config/ai');
 const { buildMessages } = require('./promptBuilder');
+const TopicTracker = require('../services/topicTracker');
 
 // --- Define Core Exploratory Topics ---
 const EXPLORATORY_TOPICS = [
@@ -22,15 +23,16 @@ let coveredTopics = new Set();
  * Generate a personalized conversation prompt for a specific contact
  * @param {Object} contact - The contact information
  * @param {Array} conversationHistory - Recent history for context
+ * @param {string} userId - The user's ID
  * @returns {Array<object>} - A structured message array for the LLM
  */
-const generatePersonalizedPrompt = (contact, conversationHistory = []) => {
+const generatePersonalizedPrompt = async (contact, conversationHistory = [], userId) => {
   const name = contact.name ? contact.name.split(' ')[0] : 'there';
   const systemMessage = `${aiConfig.openAI.systemPrompt}
 
 --- YOUR CURRENT MISSION ---
 
-*   **Your Identity:** Foundess AI, an exploratory interviewer.
+*   **Your Identity:** VERIES AI, an exploratory interviewer.
 *   **Your Goal:** Have a natural conversation with ${name} to understand their startup, needs, and investor preferences.
 *   **Your Approach:** Ask open-ended questions, listen actively, and ask relevant follow-ups. Avoid rigid scripts.
 *   **Conversation Partner:** ${name}.
@@ -54,26 +56,17 @@ const generatePersonalizedPrompt = (contact, conversationHistory = []) => {
 `;
 
   // --- Determine Next Logical Question ---
-  // This logic is kept from the original implementation but is simplified.
-  // A more robust state management would be external to this function.
-  const historyText = conversationHistory.map(msg => msg.content.toLowerCase()).join(' ');
-  let nextTopic = null;
-  for (const topic of EXPLORATORY_TOPICS) {
-    let likelyCovered = false;
-    if (topic.key === 'customers' && (historyText.includes('customer') || historyText.includes('user'))) likelyCovered = true;
-    if (topic.key === 'stage' && (historyText.includes('stage') || historyText.includes('seed') || historyText.includes('series a'))) likelyCovered = true;
-    
-    if (!likelyCovered && !conversationHistory.find(m => m.content.includes(topic.key))) {
-        nextTopic = topic;
-        break;
-    }
-  }
-
-  let taskMessage = "Continue the conversation naturally based on the last exchange. Ask clarifying follow-up questions if needed.";
-  if (nextTopic) {
+  const priorityTopics = EXPLORATORY_TOPICS.map(t => t.key);
+  const alreadyCovered = await TopicTracker.getCovered(userId);
+  const remainingTopics = priorityTopics.filter(t => !alreadyCovered.includes(t));
+  
+  let taskMessage = "It seems we've covered the main points. Ask if they have any final comments, then provide the closing statement.";
+  if (remainingTopics.length > 0) {
+    const nextTopicKey = remainingTopics[0];
+    const nextTopic = EXPLORATORY_TOPICS.find(t => t.key === nextTopicKey);
+    if (nextTopic) {
       taskMessage = `Guide the conversation towards understanding the founder's perspective. If appropriate, ask something like: "${nextTopic.question}" or a natural follow-up. Mark topic '${nextTopic.key}' as covered once discussed.`;
-  } else {
-      taskMessage = "It seems we've covered the main points. Ask if they have any final comments, then provide the closing statement.";
+    }
   }
   
   // Use the new prompt builder to construct the final message array
@@ -87,8 +80,10 @@ const generatePersonalizedPrompt = (contact, conversationHistory = []) => {
  */
 const getInitialGreeting = (contact) => {
   const name = contact.name ? contact.name.split(' ')[0] : 'there';
-  // Updated greeting for a more exploratory tone
-  const greeting = `Hi ${name}, this is Foundess AI calling. We're connecting with founders like you to better understand what you're building and what you look for in investor partnerships. Would you have a few minutes to chat about your startup?`;
+  if (!name) {
+    throw new Error('Name is required for the greeting.');
+  }
+  const greeting = `Hi ${name}, this is VERIES AI calling. We're connecting with founders like you to better understand what you're building and what you look for in investor partnerships. Would you have a few minutes to chat about your startup?`;
   return greeting;
 };
 

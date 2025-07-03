@@ -1,6 +1,6 @@
-# Foundess Caller
+# VERIES
 
-Voice AI calling agent for Foundess that autonomously calls potential clients and investors, engages in natural conversation, and captures conversation transcripts.
+Voice AI calling agent for VERIES that autonomously calls potential clients and investors, engages in natural conversation, and captures conversation transcripts.
 
 ## Features
 
@@ -24,8 +24,8 @@ Voice AI calling agent for Foundess that autonomously calls potential clients an
 ### 1. Clone the repository
 
 ```bash
-git clone https://github.com/yudduy/foundess-caller.git
-cd foundess-caller
+git clone <your-repository-url>
+cd veries-caller
 ```
 
 ### 2. Install dependencies
@@ -108,7 +108,7 @@ npm start
 ## Project Structure
 
 ```
-foundess-caller/
+veries-caller/
 ├── src/
 │   ├── app.js                     # Main application entry point
 │   ├── config/                    # Configuration settings

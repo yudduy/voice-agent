@@ -1,35 +1,46 @@
 /* eslint-env jest */
 
+/**
+ * Conversation service tests – mocks and setup
+ */
+
+const mockOpenAICreate = jest.fn();
+
+// ---- module mocks (must come before requires) ----
+jest.mock('../../src/repositories/userRepository', () => ({
+  findUser: jest.fn(),
+}));
+
+jest.mock('../../src/config/redis', () => {
+  const RedisMock = require('ioredis-mock');
+  return new RedisMock(); // instance with get/set/del
+});
+
+jest.mock('openai', () => ({
+    OpenAI: jest.fn().mockImplementation(() => ({
+        chat: {
+            completions: {
+                create: mockOpenAICreate,
+            },
+        },
+    })),
+}));
+
+// ---- imports (after mocks) ----
+const redis = require('../../src/config/redis');
+const userRepository = require('../../src/repositories/userRepository');
+const { OpenAI } = require('openai');
+
 // Set dummy env vars to prevent side effects from other modules
 process.env.SUPABASE_URL = 'https://test.supabase.co';
 process.env.SUPABASE_ANON_KEY = 'test-key';
 
-// Mock OpenAI before any other imports so that conversation service picks it up
-jest.mock('openai', () => {
-  const OpenAICtor = jest.fn().mockImplementation(() => ({
-    chat: {
-      completions: {
-        create: jest.fn().mockResolvedValue({
-          choices: [{ message: { content: 'hi' } }],
-        }),
-      },
-    },
-  }));
-  return { OpenAI: OpenAICtor };
-});
-
-// Mock dependencies before any imports
-const redis = require('../../src/config/redis');
-const cacheService = require('../../src/services/cacheService');
-// The database service is no longer used directly by conversationService in the refactored version
-// const databaseService = require('../../src/services/database');
-const promptUtils = require('../../src/utils/prompt');
-const aiConfig = require('../../src/config/ai');
-
-jest.mock('../../src/config/redis');
+// Mock all dependencies first
+jest.mock('../../src/repositories/historyRepository');
 jest.mock('../../src/services/cacheService');
-// jest.mock('../../src/services/database'); // This is no longer needed
-jest.mock('../../src/utils/prompt');
+jest.mock('../../src/utils/logger');
+jest.mock('../../src/services/topicTracker');
+jest.mock('../../src/config/redis');
 jest.mock('../../src/config/ai', () => ({
   openAI: {
     apiKey: 'test-key',
@@ -39,9 +50,10 @@ jest.mock('../../src/config/ai', () => ({
   },
 }));
 
-const { OpenAI } = require('openai');
-
-// Import conversationService AFTER mocks are in place
+const cacheService = require('../../src/services/cacheService');
+const promptUtils = require('../../src/utils/prompt');
+const aiConfig = require('../../src/config/ai');
+const TopicTracker = require('../../src/services/topicTracker');
 const conversationService = require('../../src/services/conversation');
 
 describe('Refactored Conversation Service', () => {
@@ -51,9 +63,25 @@ describe('Refactored Conversation Service', () => {
     const callSidKey = `callsid_mapping:${callSid}`;
 
     beforeEach(() => {
-        jest.clearAllMocks();
-        // Default mock mapping for callSid -> userId
-        redis.get.mockResolvedValue(userId);
+        jest.resetAllMocks();
+
+        // Turn redis methods into spies we can assert on
+        jest.spyOn(redis, 'get').mockResolvedValue(userId);
+        jest.spyOn(redis, 'set').mockResolvedValue('OK');
+        jest.spyOn(redis, 'del').mockResolvedValue(1);
+
+        // mock user repository
+        userRepository.findUser.mockResolvedValue({ id: userId, name: 'Test User' });
+
+        // ensure OpenAI chat completion returns a default response
+        mockOpenAICreate.mockResolvedValue({
+          choices: [{ message: { content: 'hi' } }],
+        });
+
+        // spy on prompt generator
+        jest
+          .spyOn(promptUtils, 'generatePersonalizedPrompt')
+          .mockReturnValue(['assistant', 'How can I help?']);
     });
 
     describe('initializeConversation', () => {
@@ -85,35 +113,30 @@ describe('Refactored Conversation Service', () => {
         });
         
         it('should return an error and hangup if callSid mapping is not found', async () => {
-            redis.get.mockResolvedValue(null);
-            
+            redis.get.mockResolvedValue(null); // simulate missing mapping
             const result = await conversationService.getResponse('input', callSid, 'user-id-456');
             
-            expect(result.text).toContain('error');
+            expect(result.text).toContain("internal error retrieving our conversation state");
         });
         
         it('should handle OpenAI API errors gracefully', async () => {
-            jest.resetModules();
-            jest.doMock('openai', () => {
-              return {
-                OpenAI: jest.fn().mockImplementation(() => ({
-                  chat: {
-                    completions: {
-                      create: jest.fn().mockRejectedValue(new Error('API Error')),
-                    },
-                  },
-                })),
-              };
-            });
+            mockOpenAICreate.mockRejectedValue(new Error('API Error'));
 
-            const conversationServiceWithFailure = require('../../src/services/conversation');
-            cacheService.getConversation.mockResolvedValue([]);
-            promptUtils.generatePersonalizedPrompt.mockReturnValue([]);
-
-            redis.get.mockResolvedValue(userId);
-            const result = await conversationServiceWithFailure.getResponse('input', callSid, 'user-id-456');
+            const result = await conversationService.getResponse('input', callSid, userId);
             
-            expect(result.text).toContain('error');
+            expect(result.text).toContain("technical difficulties");
+        });
+
+        it('should generate a prompt with the next logical topic', async () => {
+          // Use real prompt builder for this test
+          promptUtils.generatePersonalizedPrompt.mockRestore();
+
+          cacheService.getConversation.mockResolvedValue([]);
+          TopicTracker.getCovered.mockResolvedValue(['intro', 'product']);
+
+          await conversationService.getResponse('a message', callSid, userId);
+
+          expect(TopicTracker.getCovered).toHaveBeenCalledWith(userId);
         });
     });
 
@@ -137,4 +160,8 @@ describe('Refactored Conversation Service', () => {
             expect(redis.del).not.toHaveBeenCalled();
         });
     });
+});
+
+afterEach(() => {
+  jest.restoreAllMocks();
 }); 

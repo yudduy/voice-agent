@@ -1,5 +1,7 @@
 /**
- * Twilio configuration for Foundess Caller
+ * Twilio configuration for VERIES
+ *
+ * This file configures the Twilio client using credentials from environment variables.
  */
 require('dotenv').config();
 

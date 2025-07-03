@@ -1,5 +1,5 @@
 /**
- * Logging utility for Foundess Caller
+ * Logging utility for VERIES
  */
 const winston = require('winston');
 
@@ -15,7 +15,7 @@ const logFormat = winston.format.combine(
 const logger = winston.createLogger({
   level: process.env.NODE_ENV === 'production' ? 'info' : 'debug',
   format: logFormat,
-  defaultMeta: { service: 'foundess-caller' },
+  defaultMeta: { service: 'veries-caller' },
   transports: [
     // Write all logs to console
     new winston.transports.Console({

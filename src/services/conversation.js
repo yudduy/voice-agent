@@ -8,6 +8,8 @@ const logger = require('../utils/logger');
 // const databaseService = require('./database'); // REMOVED - No longer used
 const cacheService = require('./cacheService');
 const redis = require('../config/redis'); // Direct redis access for callSid mapping
+const userRepository = require('../repositories/userRepository');
+const TopicTracker = require('./topicTracker');
 
 // Initialize OpenAI client
 const openai = new OpenAI({
@@ -75,9 +77,8 @@ const getResponse = async (userInput, callSid) => {
       };
   }
   
-  // NOTE: The `contact` object is no longer fetched on every turn. The original `prompt.js` used it for the name.
-  // This needs to be reconciled. For now, we'll pass a placeholder.
-  const placeholderContact = { name: 'there' };
+  const user = await userRepository.findUser({ id: userId });
+  const contact = user || { name: 'there' };
   
   try {
     const conversationHistory = await cacheService.getConversation(userId);
@@ -87,7 +88,7 @@ const getResponse = async (userInput, callSid) => {
     // --- Transcript logic is removed from here. It will be handled at the end of the call. ---
     
     // --- Generate Prompt ---
-    const messages = promptUtils.generatePersonalizedPrompt(placeholderContact, conversationHistory);
+    const messages = await promptUtils.generatePersonalizedPrompt(contact, conversationHistory, userId);
     
     // --- OpenAI API Call ---
     const completion = await openai.chat.completions.create({
@@ -99,6 +100,12 @@ const getResponse = async (userInput, callSid) => {
     
     const aiResponse = completion.choices[0].message.content.trim();
     const assistantTurn = { role: 'assistant', content: aiResponse };
+
+    // --- Topic Tracking ---
+    const topicMatch = /<topic:(\w+)>/i.exec(aiResponse);
+    if (topicMatch) {
+      await TopicTracker.markCovered(userId, topicMatch[1]);
+    }
 
     // --- Hangup Detection ---
     let shouldHangup = false;

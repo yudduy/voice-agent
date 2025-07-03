@@ -1,5 +1,9 @@
 /* eslint-env jest */
 
+// Set dummy env vars for tests to pass config validation
+process.env.UPSTASH_REDIS_REST_URL = 'http://mock-redis.com';
+process.env.UPSTASH_REDIS_REST_TOKEN = 'mock-token';
+
 // Mock Upstash Redis with ioredis-mock (constructor spy defined inside factory)
 jest.mock('@upstash/redis', () => {
   const RedisMock = require('ioredis-mock');

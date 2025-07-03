@@ -7,13 +7,15 @@ const openai = require('../config/ai').openai;
 const twilio = require('twilio')(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN);
 
 const SMS_SYSTEM_PROMPT = "You are a friendly and helpful AI assistant. Keep your responses concise and conversational, suitable for SMS.";
-const SIGN_UP_MESSAGE = "Hello! It looks like you're new here. Please sign up at [Your App URL] to get started.";
 
 /**
  * Handles an incoming SMS message payload from Twilio.
  * @param {object} twilioPayload - The parsed payload from Twilio's request body.
  */
 async function handleIncomingSms(twilioPayload) {
+  if (!twilioPayload || !twilioPayload.From || !twilioPayload.Body || !twilioPayload.MessageSid) {
+    throw new Error('Invalid Twilio payload');
+  }
   const { From: fromNumber, Body: messageContent, MessageSid: messageSid } = twilioPayload;
 
   // 1. Find or create a user

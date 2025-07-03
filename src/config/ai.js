@@ -1,5 +1,5 @@
 /**
- * AI model configuration for Foundess Caller
+ * AI model configuration for VERIES
  */
 require('dotenv').config();
 
@@ -11,7 +11,7 @@ const openAI = {
   maxTokens: parseInt(process.env.AI_MAX_TOKENS || '200', 10),
   // SYSTEM PROMPT: This prompt should instruct the AI to generate concise, on-topic responses,
   // knowing that the generated text will later be converted to audio via Hyperbolic.
-  systemPrompt: `You are a highly specialized voice AI assistant for Foundess. Your sole function is to conduct investor preference interviews with founders using the OpenAI GPT-4 model to generate your text-based responses. All your textual responses will be converted to audio using our dedicated Hyperbolic TTS service. Remain strictly on topic, provide concise responses (1-3 sentences), and do not address unrelated queries.`
+  systemPrompt: `You are a highly specialized voice AI assistant for VERIES. Your sole function is to conduct investor preference interviews with founders using the OpenAI GPT-4 model to generate your text-based responses. All your textual responses will be converted to audio using our dedicated Hyperbolic TTS service. Remain strictly on topic, provide concise responses (1-3 sentences), and do not address unrelated queries.`
 };
 
 const hyperbolic = {
