@@ -1,30 +1,24 @@
 /* eslint-env jest */
 
-const { createClient } = require('@supabase/supabase-js');
+// Task-A Fix: Reset modules and mock dependencies *before* the module under test is required.
+jest.resetModules();
 
-jest.mock('@supabase/supabase-js', () => ({
-  createClient: jest.fn(),
+const mockCreateClient = jest.fn();
+jest.doMock('@supabase/supabase-js', () => ({
+  createClient: mockCreateClient,
 }));
 
+// Set dummy env vars required by the module
+process.env.SUPABASE_URL = 'https://test.supabase.co';
+process.env.SUPABASE_ANON_KEY = 'test-anon-key';
+
+// Now, require the module that we are testing. It will pick up the mock above.
+require('../../src/config/supabase');
+const { createClient } = require('@supabase/supabase-js');
+
+
 describe('Supabase Client Configuration', () => {
-  const OLD_ENV = process.env;
-
-  beforeEach(() => {
-    jest.resetModules();
-    process.env = { ...OLD_ENV };
-    createClient.mockClear();
-  });
-
-  afterAll(() => {
-    process.env = OLD_ENV;
-  });
-
-  it('should initialize Supabase client with environment variables', () => {
-    process.env.SUPABASE_URL = 'https://test.supabase.co';
-    process.env.SUPABASE_ANON_KEY = 'test-anon-key';
-
-    require('../../src/config/supabase');
-
+  it('should initialize Supabase client exactly once with correct credentials', () => {
     expect(createClient).toHaveBeenCalledTimes(1);
     expect(createClient).toHaveBeenCalledWith(
       'https://test.supabase.co',
@@ -32,21 +26,35 @@ describe('Supabase Client Configuration', () => {
     );
   });
 
-  it('should throw an error if SUPABASE_URL is not defined', () => {
-    delete process.env.SUPABASE_URL;
-    process.env.SUPABASE_ANON_KEY = 'test-anon-key';
+  // The tests for missing env vars need their own isolated setup.
+  describe('when environment variables are missing', () => {
+    const OLD_ENV = process.env;
 
-    expect(() => {
-      require('../../src/config/supabase');
-    }).toThrow('Supabase URL and Anon Key are required.');
-  });
+    beforeEach(() => {
+      jest.resetModules();
+      process.env = { ...OLD_ENV };
+    });
 
-  it('should throw an error if SUPABASE_ANON_KEY is not defined', () => {
-    process.env.SUPABASE_URL = 'https://test.supabase.co';
-    delete process.env.SUPABASE_ANON_KEY;
+    afterAll(() => {
+      process.env = OLD_ENV;
+    });
 
-    expect(() => {
-      require('../../src/config/supabase');
-    }).toThrow('Supabase URL and Anon Key are required.');
+    it('should throw an error if SUPABASE_URL is not defined', () => {
+      delete process.env.SUPABASE_URL;
+      process.env.SUPABASE_ANON_KEY = 'test-anon-key';
+
+      expect(() => {
+        require('../../src/config/supabase');
+      }).toThrow('Supabase URL and Anon Key are required.');
+    });
+
+    it('should throw an error if SUPABASE_ANON_KEY is not defined', () => {
+      process.env.SUPABASE_URL = 'https://test.supabase.co';
+      delete process.env.SUPABASE_ANON_KEY;
+
+      expect(() => {
+        require('../../src/config/supabase');
+      }).toThrow('Supabase URL and Anon Key are required.');
+    });
   });
 }); 

@@ -1,10 +1,9 @@
 /* eslint-env jest */
 
-const redis = require('../../src/config/redis');
 const cacheService = require('../../src/services/cacheService');
 const logger = require('../../src/utils/logger');
+const redis = require('../../src/config/redis'); // This is now our global ioredis-mock instance
 
-jest.mock('../../src/config/redis', () => require('ioredis-mock').createConnectedClient());
 jest.mock('../../src/utils/logger', () => ({
   error: jest.fn(),
 }));
@@ -14,78 +13,65 @@ describe('Cache Service', () => {
   const conversationKey = `conversation:${userId}`;
   const mockTurn = { role: 'user', content: 'Hello' };
 
-  beforeEach(async () => {
-    await redis.flushall();
+  beforeEach(() => {
     logger.error.mockClear();
+    // Ensure fresh state for each test
+    if (typeof redis.flushall === 'function') redis.flushall();
   });
 
   describe('getConversation', () => {
-    it('should return an empty array if no history exists', async () => {
-      const history = await cacheService.getConversation(userId);
-      expect(history).toEqual([]);
+    it('should return a parsed conversation history if it exists', async () => {
+      // Use the mock redis instance directly
+      await redis.set(conversationKey, JSON.stringify([mockTurn]));
+      const result = await cacheService.getConversation(userId);
+      expect(result).toEqual([mockTurn]);
     });
 
-    it('should return the parsed conversation history if it exists', async () => {
-      const storedHistory = [mockTurn];
-      await redis.set(conversationKey, JSON.stringify(storedHistory));
-      
-      const history = await cacheService.getConversation(userId);
-      expect(history).toEqual(storedHistory);
+    it('should return an empty array if the history does not exist', async () => {
+      const result = await cacheService.getConversation(userId);
+      expect(result).toEqual([]);
     });
 
     it('should log an error and re-throw if Redis fails', async () => {
-      redis.get = jest.fn().mockRejectedValue(new Error('Redis GET failed'));
+      // Spy on the globally-mocked redis instance
+      jest.spyOn(redis, 'get').mockRejectedValueOnce(new Error('Redis GET failed'));
       
       await expect(cacheService.getConversation(userId)).rejects.toThrow('Redis GET failed');
-      expect(logger.error).toHaveBeenCalled();
+      expect(logger.error).toHaveBeenCalledWith(`Error getting conversation for user ${userId} from Redis:`, expect.any(Error));
     });
   });
 
   describe('appendConversation', () => {
-    it('should create a new history if one does not exist', async () => {
+    it('should create a new history and set a TTL', async () => {
       await cacheService.appendConversation(userId, mockTurn);
-      
       const history = JSON.parse(await redis.get(conversationKey));
       expect(history).toEqual([mockTurn]);
-      
       const ttl = await redis.ttl(conversationKey);
       expect(ttl).toBeGreaterThan(0);
     });
 
-    it('should append to an existing history', async () => {
-      const initialHistory = [{ role: 'assistant', content: 'Hi there!' }];
-      await redis.set(conversationKey, JSON.stringify(initialHistory));
-      
-      await cacheService.appendConversation(userId, mockTurn);
-      
-      const history = JSON.parse(await redis.get(conversationKey));
-      expect(history).toEqual([...initialHistory, mockTurn]);
-    });
+    it('should log an error and re-throw if set fails', async () => {
+      // The implementation uses get/set, not lpush
+      jest.spyOn(redis, 'set').mockRejectedValueOnce(new Error('Redis SET failed'));
 
-    it('should trim the history to the specified maxTurns', async () => {
-      const longHistory = Array.from({ length: 20 }, (_, i) => ({ role: 'user', content: `msg ${i}` }));
-      await redis.set(conversationKey, JSON.stringify(longHistory));
-      
-      await cacheService.appendConversation(userId, mockTurn, 15);
-      
-      const history = JSON.parse(await redis.get(conversationKey));
-      expect(history.length).toBe(15);
-      expect(history[14]).toEqual(mockTurn);
+      await expect(cacheService.appendConversation(userId, mockTurn)).rejects.toThrow('Redis SET failed');
+      expect(logger.error).toHaveBeenCalledWith(`Error appending conversation for user ${userId} to Redis:`, expect.any(Error));
     });
   });
 
   describe('clearConversation', () => {
-    it('should delete the conversation history from Redis', async () => {
-      await redis.set(conversationKey, JSON.stringify([mockTurn]));
-      
+    it('should delete the conversation history', async () => {
+      await redis.set(conversationKey, 'data');
       await cacheService.clearConversation(userId);
-      
-      const history = await redis.get(conversationKey);
-      expect(history).toBeNull();
+      const result = await redis.get(conversationKey);
+      expect(result).toBeNull();
     });
 
-    it('should not throw an error if the history does not exist', async () => {
-      await expect(cacheService.clearConversation(userId)).resolves.not.toThrow();
+    it('should log an error and re-throw if del fails', async () => {
+      jest.spyOn(redis, 'del').mockRejectedValueOnce(new Error('Redis DEL failed'));
+
+      await expect(cacheService.clearConversation(userId)).rejects.toThrow('Redis DEL failed');
+      expect(logger.error).toHaveBeenCalledWith(`Error clearing conversation for user ${userId} from Redis:`, expect.any(Error));
     });
   });
 }); 

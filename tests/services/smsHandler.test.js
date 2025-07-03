@@ -1,6 +1,23 @@
 /* eslint-env jest */
 
-// Mock dependencies
+// ------------------ Twilio Mock (must come first) ------------------
+var mockTwilioCreate = jest.fn().mockResolvedValue({ sid: 'SM123' });
+
+jest.mock('twilio', () => {
+  const mockCtor = jest.fn(() => ({
+    messages: { create: mockTwilioCreate },
+  }));
+  return mockCtor;
+});
+
+// Ensure modules use the new mock
+jest.resetModules();
+
+// Set dummy env vars before any imports to prevent config errors
+process.env.SUPABASE_URL = 'https://test.supabase.co';
+process.env.SUPABASE_ANON_KEY = 'test-key';
+
+// Mock and require dependencies AFTER twilio mock is set up
 const userRepository = require('../../src/repositories/userRepository');
 const historyRepository = require('../../src/repositories/historyRepository');
 const cacheService = require('../../src/services/cacheService');
@@ -23,15 +40,6 @@ jest.mock('../../src/config/ai', () => ({
   },
 }));
 
-// Mock Twilio client
-const twilioCreateMock = jest.fn();
-jest.mock('twilio', () => jest.fn(() => ({
-    messages: {
-        create: twilioCreateMock,
-    }
-})));
-
-
 describe('SMS Handler Service', () => {
     const twilioPayload = { From: '+15550001111', Body: 'Hello AI', MessageSid: 'SM_SID_IN' };
     const mockUser = { id: 'user-123' };
@@ -50,7 +58,7 @@ describe('SMS Handler Service', () => {
         aiConfig.openai.chat.completions.create.mockResolvedValue({
             choices: [{ message: { content: aiResponse } }],
         });
-        twilioCreateMock.mockResolvedValue(twilioResponse);
+        mockTwilioCreate.mockResolvedValue(twilioResponse);
     });
 
     it('should process an incoming SMS for an existing user correctly', async () => {
@@ -71,7 +79,7 @@ describe('SMS Handler Service', () => {
         expect(aiConfig.openai.chat.completions.create).toHaveBeenCalled();
         
         // 4. Twilio response
-        expect(twilioCreateMock).toHaveBeenCalledWith({
+        expect(mockTwilioCreate).toHaveBeenCalledWith({
             body: aiResponse,
             from: process.env.TWILIO_PHONE_NUMBER,
             to: twilioPayload.From,
@@ -104,7 +112,7 @@ describe('SMS Handler Service', () => {
 
         await smsHandler.handleIncomingSms(twilioPayload);
         
-        expect(twilioCreateMock).toHaveBeenCalledWith(expect.objectContaining({
+        expect(mockTwilioCreate).toHaveBeenCalledWith(expect.objectContaining({
             body: "Sorry, I'm having a little trouble right now. Please try again in a moment.",
         }));
         expect(logger.error).toHaveBeenCalledWith('Error getting completion from OpenAI:', expect.any(Error));
