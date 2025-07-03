@@ -159,7 +159,8 @@ This will initiate a test call to the specified number.
 
 ## License
 
-This project is proprietary and confidential.
+This project is open-source licensed under the MIT License. See the [LICENSE](LICENSE) file for details.
+
 
 ## Troubleshooting
 
