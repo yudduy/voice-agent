@@ -2,6 +2,7 @@
  * Conversation prompts and templates for AI
  */
 const aiConfig = require('../config/ai');
+const { buildMessages } = require('./promptBuilder');
 
 // --- Define Core Exploratory Topics ---
 const EXPLORATORY_TOPICS = [
@@ -21,53 +22,11 @@ let coveredTopics = new Set();
  * Generate a personalized conversation prompt for a specific contact
  * @param {Object} contact - The contact information
  * @param {Array} conversationHistory - Recent history for context
- * @returns {String} - The customized system prompt
+ * @returns {Array<object>} - A structured message array for the LLM
  */
 const generatePersonalizedPrompt = (contact, conversationHistory = []) => {
   const name = contact.name ? contact.name.split(' ')[0] : 'there';
-  // Use the base system prompt from config
-  const basePrompt = aiConfig.openAI.systemPrompt; 
-
-  // --- Determine Next Logical Question --- 
-  let nextTopic = null;
-  // Analyze history briefly to see what might have been touched upon
-  // (This is a basic version - could use NLP or keyword spotting for better accuracy)
-  const historyText = conversationHistory.map(msg => msg.content.toLowerCase()).join(' ');
-  
-  for (const topic of EXPLORATORY_TOPICS) {
-    if (!coveredTopics.has(topic.key)) { 
-        // Basic check if keywords related to the topic appear in recent history
-        // This helps avoid asking again immediately if user already mentioned it
-        let likelyCovered = false;
-        if (topic.key === 'customers' && (historyText.includes('customer') || historyText.includes('user'))) likelyCovered = true;
-        if (topic.key === 'stage' && (historyText.includes('stage') || historyText.includes('seed') || historyText.includes('series a'))) likelyCovered = true;
-        // Add more checks for other topics if needed
-        
-        if (!likelyCovered) {
-            nextTopic = topic; // Found the next likely topic
-            break;
-        }
-    }
-  }
-
-  // If all main topics seem covered, move to closing
-  if (!nextTopic && !coveredTopics.has('otherComments')) {
-      nextTopic = EXPLORATORY_TOPICS.find(t => t.key === 'otherComments');
-  }
-  
-  let nextStepInstruction = "Continue the conversation naturally based on the last exchange. Ask clarifying follow-up questions if needed.";
-  if (nextTopic) {
-      nextStepInstruction = `Guide the conversation towards understanding the founder's perspective. If appropriate, ask something like: "${nextTopic.question}" or a natural follow-up based on their last response. Mark topic '${nextTopic.key}' as covered once discussed.`;
-      // Simple state update (Note: This state is per-prompt generation, not persistent across calls)
-      // A more robust state management would be needed outside this function.
-      // For now, we'll rely on the AI to track based on prompt instructions.
-      // coveredTopics.add(nextTopic.key); // Avoid modifying global state here
-  } else {
-      nextStepInstruction = "It seems we've covered the main points. Ask if they have any final comments, then provide the closing statement."
-  }
-  
-  // --- Construct the Full Prompt --- 
-  return `${basePrompt}
+  const systemMessage = `${aiConfig.openAI.systemPrompt}
 
 --- YOUR CURRENT MISSION ---
 
@@ -92,13 +51,33 @@ const generatePersonalizedPrompt = (contact, conversationHistory = []) => {
 *   Challenges / Needs
 *   Ideal Investor Profile / Support Needs
 *   Any Other Comments
-
---- CURRENT CONTEXT (Last few exchanges) ---
-${conversationHistory.slice(-6).map(msg => `- ${msg.role === 'user' ? name : 'You'}: ${msg.content}`).join('\n')}
-
---- NEXT STEP ---
-${nextStepInstruction}
 `;
+
+  // --- Determine Next Logical Question ---
+  // This logic is kept from the original implementation but is simplified.
+  // A more robust state management would be external to this function.
+  const historyText = conversationHistory.map(msg => msg.content.toLowerCase()).join(' ');
+  let nextTopic = null;
+  for (const topic of EXPLORATORY_TOPICS) {
+    let likelyCovered = false;
+    if (topic.key === 'customers' && (historyText.includes('customer') || historyText.includes('user'))) likelyCovered = true;
+    if (topic.key === 'stage' && (historyText.includes('stage') || historyText.includes('seed') || historyText.includes('series a'))) likelyCovered = true;
+    
+    if (!likelyCovered && !conversationHistory.find(m => m.content.includes(topic.key))) {
+        nextTopic = topic;
+        break;
+    }
+  }
+
+  let taskMessage = "Continue the conversation naturally based on the last exchange. Ask clarifying follow-up questions if needed.";
+  if (nextTopic) {
+      taskMessage = `Guide the conversation towards understanding the founder's perspective. If appropriate, ask something like: "${nextTopic.question}" or a natural follow-up. Mark topic '${nextTopic.key}' as covered once discussed.`;
+  } else {
+      taskMessage = "It seems we've covered the main points. Ask if they have any final comments, then provide the closing statement.";
+  }
+  
+  // Use the new prompt builder to construct the final message array
+  return buildMessages(systemMessage, conversationHistory, taskMessage);
 };
 
 /**

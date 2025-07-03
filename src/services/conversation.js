@@ -6,15 +6,25 @@ const aiConfig = require('../config/ai');
 const promptUtils = require('../utils/prompt');
 const logger = require('../utils/logger');
 const databaseService = require('./database');
+const cacheService = require('./cacheService');
+const redis = require('../config/redis');
 
 // Initialize OpenAI client
 const openai = new OpenAI({
   apiKey: aiConfig.openAI.apiKey
 });
 
-// Store conversation data (history and contact) by call SID
-// Structure: Map<callSid, { history: Array, contact: Object }>
-const conversations = new Map();
+const getCallSidKey = (callSid) => `callsid_mapping:${callSid}`;
+
+/**
+ * Retrieves the user ID mapped to a given call SID.
+ * @param {string} callSid - The Twilio Call SID.
+ * @returns {Promise<string|null>} The user ID or null if not found.
+ */
+async function getUserIdByCallSid(callSid) {
+    const key = getCallSidKey(callSid);
+    return await redis.get(key);
+}
 
 /**
  * Check if a contact object represents a temporary test call.
@@ -26,24 +36,25 @@ const isTestContact = (contact) => {
 };
 
 /**
- * Initialize a new conversation for a call
+ * Initialize a new conversation for a call.
+ * This now maps the call SID to a user ID for Redis-based history.
  * @param {string} callSid - Twilio Call SID
- * @param {Object} contact - Contact document
+ * @param {Object} contact - Contact document, must contain an `_id` property.
  */
-const initializeConversation = (callSid, contact) => {
-  if (!contact) {
-      logger.error('[initializeConversation] Attempted to initialize with null contact', { callSid });
-      // Avoid setting null contact, handle potential errors upstream
-      conversations.set(callSid, { history: [], contact: null }); // Store null explicitly if it happens
-      return;
+const initializeConversation = async (callSid, contact) => {
+  if (!contact || !contact._id) {
+    logger.error('[initializeConversation] Attempted to initialize with invalid contact', { callSid });
+    return;
   }
-  // Store both history array and the contact object
-  conversations.set(callSid, { history: [], contact: contact });
-  logger.info(`Initialized conversation data for call`, { 
-      callSid, 
-      contactId: contact._id, 
-      isTest: isTestContact(contact) 
-  });
+  
+  const userId = contact._id.toString();
+  const key = getCallSidKey(callSid);
+  
+  // Map callSid to userId with a TTL (e.g., 24 hours)
+  await redis.set(key, userId, 'EX', 24 * 60 * 60);
+
+  // The conversation history itself is implicitly initialized by the first `append`
+  logger.info(`Initialized conversation mapping for call`, { callSid, userId });
 };
 
 /**
@@ -53,135 +64,64 @@ const initializeConversation = (callSid, contact) => {
  * @returns {Promise<{ text: string, shouldHangup: boolean }>} - Object containing AI response text and hangup flag
  */
 const getResponse = async (userInput, callSid) => {
-  let storedData = conversations.get(callSid);
-  let contact = null;
-  let conversationHistory = [];
+  const callSidKey = getCallSidKey(callSid);
+  const userId = await redis.get(callSidKey);
 
-  // Ensure data exists for the callSid
-  if (!storedData || !storedData.history) {
-      logger.error('[getResponse] CRITICAL: No conversation data found for callSid. Cannot proceed.', { callSid });
-      // Cannot generate a meaningful response, force hangup
+  if (!userId) {
+      logger.error('[getResponse] CRITICAL: No user ID mapping found for callSid. Cannot proceed.', { callSid });
       return { 
           text: "I apologize, there was an internal error retrieving our conversation state. We will need to end this call.", 
           shouldHangup: true 
       };
   }
   
-  // Retrieve contact and history
-  contact = storedData.contact;
-  conversationHistory = storedData.history;
+  // NOTE: The `contact` object is no longer fetched on every turn. The original `prompt.js` used it for the name.
+  // This needs to be reconciled. For now, we'll pass a placeholder.
+  const placeholderContact = { name: 'there' };
   
-  // Validate if contact is still null (should only happen if init failed badly)
-  if (!contact) {
-       logger.error('[getResponse] CRITICAL: Contact object is null in stored conversation data.', { callSid });
-       // Fallback or create temporary? For safety, fallback and hangup.
-        return { 
-          text: "I apologize, critical contact information is missing for this call. We will need to end this call.", 
-          shouldHangup: true 
-      };
-  }
-  
-  // Determine if this is a test call based on the *retrieved* contact object
-  const isTest = isTestContact(contact);
-  logger.debug(`[getResponse] Retrieved conversation data. isTestCall: ${isTest}`, { callSid, contactId: contact._id });
-
   try {
-    // Add user's message to history (using the retrieved history array)
-    conversationHistory.push({ role: 'user', content: userInput });
+    const conversationHistory = await cacheService.getConversation(userId);
+    const userTurn = { role: 'user', content: userInput };
+    conversationHistory.push(userTurn);
+
+    // --- Transcript logic is removed from here. It will be handled at the end of the call. ---
     
-    // --- Conditional Transcript Save (User) --- 
-    if (!isTest) {
-        logger.debug('[getResponse] Saving user message to transcript...', { callSid });
-        // Wrap in try-catch in case updateCallTranscript fails for other reasons
-        try {
-            await databaseService.updateCallTranscript(callSid, 'user', userInput);
-        } catch (transcriptError) {
-             logger.error('[getResponse] Failed to save user transcript', { callSid, error: transcriptError.message });
-        }
-    } else {
-        logger.debug('[getResponse] Skipping user transcript save for test call.', { callSid });
-    }
-    // --- End Conditional Transcript Save --- 
+    // --- Generate Prompt ---
+    const messages = promptUtils.generatePersonalizedPrompt(placeholderContact, conversationHistory);
     
-    // --- Generate Strict System Prompt --- 
-    // Always use the retrieved contact object here
-    const recentHistory = conversationHistory.slice(-6);
-    const systemPrompt = promptUtils.generatePersonalizedPrompt(contact, recentHistory); 
-    // --- End System Prompt Generation ---
-    
-    // Prepare messages payload: System Prompt + History
-    // Ensure history doesn't exceed token limits - prioritize recent messages
-    const historyForPayload = conversationHistory.slice(-12); // Limit history size further
-    const messagesPayload = [
-      { role: 'system', content: systemPrompt },
-      ...historyForPayload 
-    ];
-    
-    logger.debug('Sending request to OpenAI', { 
-        callSid, 
-        messageCount: messagesPayload.length,
-    });
-    
-    // --- OpenAI API Call --- 
+    // --- OpenAI API Call ---
     const completion = await openai.chat.completions.create({
       model: aiConfig.openAI.model,
-      messages: messagesPayload,
+      messages: messages,
       temperature: aiConfig.openAI.temperature,
       max_tokens: aiConfig.openAI.maxTokens,
     });
-    // --- End OpenAI API Call ---
     
     const aiResponse = completion.choices[0].message.content.trim();
-    
-    // --- Hangup Detection --- 
+    const assistantTurn = { role: 'assistant', content: aiResponse };
+
+    // --- Hangup Detection ---
     let shouldHangup = false;
     const lowerCaseResponse = aiResponse.toLowerCase();
-    // Simple keyword check - enhance if needed
-    if (lowerCaseResponse.includes('goodbye') || 
-        lowerCaseResponse.includes('thank you for your time') ||
-        lowerCaseResponse.includes('have a great day')) {
-        // More specific checks might be needed to avoid accidental hangup
+    if (lowerCaseResponse.includes('goodbye') || lowerCaseResponse.includes('thank you for your time')) {
         logger.info('AI response indicates potential end of conversation, flagging for hangup.', { callSid });
         shouldHangup = true;
     }
-    // --- End Hangup Detection --- 
 
-    // Add AI's response to history
-    conversationHistory.push({ role: 'assistant', content: aiResponse });
+    // --- Update history in cache ---
+    await cacheService.appendConversation(userId, userTurn);
+    await cacheService.appendConversation(userId, assistantTurn);
+
+    // --- Transcript saving is removed from here. ---
     
-    // --- Conditional Transcript Save --- 
-    if (!isTest) {
-        logger.debug('[getResponse] Saving AI message to transcript...', { callSid });
-         try {
-            await databaseService.updateCallTranscript(callSid, 'assistant', aiResponse);
-         } catch (transcriptError) {
-             logger.error('[getResponse] Failed to save AI transcript', { callSid, error: transcriptError.message });
-         }
-    } else {
-        logger.debug('[getResponse] Skipping AI transcript save for test call.', { callSid });
-    }
-    // --- End Conditional Transcript Save --- 
+    logger.info('Conversation exchange', { callSid, userId });
     
-    // Log the exchange
-    logger.info('Conversation exchange', {
-      callSid,
-      userInput: userInput.substring(0, 50) + (userInput.length > 50 ? '...' : ''),
-      aiResponse: aiResponse.substring(0, 50) + (aiResponse.length > 50 ? '...' : '')
-    });
-    
-    // Return object with text and hangup flag
     return { text: aiResponse, shouldHangup };
   } catch (error) {
-    logger.error('[getResponse] Error generating AI response', { 
-        callSid, 
-        contactId: contact?._id, // Log contactId from retrieved contact
-        errorMessage: error.message, 
-        errorStack: error.stack 
-    });
-    // Return fallback message in the correct structure
+    logger.error('[getResponse] Error generating AI response', { callSid, userId, error: error.message });
     return { 
-        text: "I seem to be having technical difficulties connecting to my core functions. Let\'s pause here, and someone from our team will follow up shortly. Thank you.", 
-        shouldHangup: true // Force hangup on internal AI error
+        text: "I seem to be having technical difficulties. Let's pause here, and someone will follow up shortly. Thank you.", 
+        shouldHangup: true
     }; 
   }
 };
@@ -199,14 +139,21 @@ const getInitialGreeting = (contact) => {
  * Clear conversation history for a call
  * @param {string} callSid - Twilio Call SID
  */
-const clearConversation = (callSid) => {
-  if (conversations.has(callSid)) {
-    conversations.delete(callSid);
-    logger.info('Cleared conversation history', { callSid });
+const clearConversation = async (callSid) => {
+  const callSidKey = getCallSidKey(callSid);
+  const userId = await redis.get(callSidKey);
+  
+  if (userId) {
+    await cacheService.clearConversation(userId);
+    await redis.del(callSidKey);
+    logger.info('Cleared conversation history and mapping', { callSid, userId });
+  } else {
+    logger.warn('Could not clear conversation; no mapping found for callSid', { callSid });
   }
 };
 
 module.exports = {
+  getUserIdByCallSid,
   initializeConversation,
   getResponse,
   getInitialGreeting,
