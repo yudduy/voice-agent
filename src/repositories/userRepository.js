@@ -19,11 +19,7 @@ async function findUserByPhoneNumber(phoneNumber) {
     throw error;
   }
 
-  if (!data) {
-    return null;
-  }
-
-  // The user data is nested; we extract it.
+  if (!data || !data.users) return null;
   return data.users;
 }
 
@@ -92,7 +88,41 @@ async function linkPhoneNumberToUser(userId, phoneNumber) {
     return data;
 }
 
+/**
+ * Finds a user by their Supabase user ID.
+ * This is required for production conversation flow where we already know the user ID
+ * (e.g. obtained from a previous mapping stored in Redis).
+ *
+ * @param {object} params - Parameter object (for future-proofing).
+ * @param {string} params.id - The Supabase user ID.
+ * @returns {Promise<object|null>} The user record or null if not found.
+ */
+async function findUser({ id }) {
+  if (!id) return null;
+
+  try {
+    // Query the Auth table via admin API (service role key required)
+    const { data, error } = await supabase.auth.admin.getUserById(id);
+
+    if (error) {
+      // Log but do not throw – conversation service will continue with a fallback name
+      logger.warn('Error querying user by ID in findUser (continuing without user)', {
+        id,
+        error: error.message,
+      });
+      return null;
+    }
+
+    // The user object is nested under `user` in the response
+    return data.user;
+  } catch (err) {
+    logger.error('Unexpected error in findUser', { id, error: err.message });
+    return null;
+  }
+}
+
 module.exports = {
+  findUser,
   findUserByPhoneNumber,
   createGuestUserAndLinkPhone,
   linkPhoneNumberToUser,

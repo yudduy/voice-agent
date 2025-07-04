@@ -87,7 +87,7 @@ describe('Refactored Conversation Service', () => {
     describe('initializeConversation', () => {
         it('should map callSid to userId in Redis with a TTL', async () => {
             await conversationService.initializeConversation(callSid, contact);
-            expect(redis.set).toHaveBeenCalledWith(callSidKey, userId, 'EX', 24 * 60 * 60);
+            expect(redis.set).toHaveBeenCalledWith(callSidKey, userId, { ex: 24 * 60 * 60 });
         });
 
         it('should not proceed if contact or contact._id is invalid', async () => {

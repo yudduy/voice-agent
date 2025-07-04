@@ -22,7 +22,8 @@ if (aiConfig.groqConfig.enabled) {
      logger.error('Failed to initialize Groq client', { error: error.message });
      // Groq STT will be effectively disabled
   }
-} else {
+} else if (process.env.NODE_ENV !== 'test' && !process.env.INTEGRATION_TEST) {
+  // Only log the warning if not in a test environment, to reduce noise.
   logger.warn('Groq STT is disabled in configuration or API key is missing.');
 }
 

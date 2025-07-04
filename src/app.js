@@ -7,6 +7,7 @@ const scheduler = require('./services/scheduler');
 const twilioWebhooks = require('./webhooks/twilioWebhooks');
 const audioWebhooks = require('./webhooks/audioWebhooks');
 const smsWebhook = require('./webhooks/smsWebhook');
+const { processOnboardingQueue } = require('./services/smsHandler');
 const logger = require('./utils/logger');
 const path = require('path');
 const fs = require('fs');
@@ -80,6 +81,25 @@ app.get('/voice-metrics', (req, res) => {
   }
 });
 
+// Onboarding Management Endpoints
+app.post('/api/onboarding/process', async (req, res) => {
+  try {
+    logger.info('Manual onboarding processing triggered');
+    await processOnboardingQueue();
+    res.json({ message: 'Onboarding queue processed successfully' });
+  } catch (error) {
+    logger.error('Error processing onboarding queue:', error);
+    res.status(500).json({ message: 'Error processing onboarding queue', error: error.message });
+  }
+});
+
+app.get('/api/onboarding/status', (req, res) => {
+  res.json({ 
+    message: 'Onboarding system is running',
+    timestamp: new Date().toISOString()
+  });
+});
+
 // Error handling middleware
 app.use((err, req, res, next) => {
   logger.error('Unhandled application error', { error: err });
@@ -97,9 +117,34 @@ const startServer = async () => {
     });
     
     if (process.env.DISABLE_SCHEDULER !== 'true') {
-      scheduler.schedulePhoneCalls();
+      // Schedule both phone calls and onboarding processing
+      const jobs = scheduler.scheduleAllTasks();
+      logger.info('All automated tasks scheduled', {
+        callJob: !!jobs.callJob,
+        onboardingJob: !!jobs.onboardingJob
+      });
     } else {
-      logger.info('Automatic call scheduler is disabled');
+      logger.info('Automatic scheduler is disabled');
+    }
+    
+    // Start onboarding queue processing
+    if (process.env.DISABLE_ONBOARDING !== 'true') {
+      logger.info('Starting onboarding queue processor');
+      // Process onboarding queue on startup
+      processOnboardingQueue().catch(error => {
+        logger.error('Error during initial onboarding queue processing:', error);
+      });
+      
+      // Process onboarding queue every 2 minutes
+      setInterval(async () => {
+        try {
+          await processOnboardingQueue();
+        } catch (error) {
+          logger.error('Error in periodic onboarding queue processing:', error);
+        }
+      }, 2 * 60 * 1000); // 2 minutes
+    } else {
+      logger.info('Onboarding queue processing is disabled');
     }
     
     logger.info('AI Caller application started successfully');

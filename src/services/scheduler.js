@@ -1,9 +1,10 @@
 /**
- * Scheduling service for automated calls
+ * Scheduling service for automated calls and onboarding
  */
 const schedule = require('node-schedule');
 const database = require('./database');
 const caller = require('./caller');
+const { processOnboardingQueue } = require('./smsHandler');
 const logger = require('../utils/logger');
 
 /**
@@ -103,7 +104,48 @@ const triggerManualCallBatch = async (limit = 1) => {
   }
 };
 
+/**
+ * Schedule onboarding message processing
+ * @returns {Object} - Node-schedule job object
+ */
+const scheduleOnboardingProcessing = () => {
+  logger.info('Setting up onboarding queue processing schedule');
+  
+  // Process onboarding queue every 5 minutes
+  // Cron syntax: second minute hour day month weekday
+  // */5 * * * * = Every 5 minutes
+  const job = schedule.scheduleJob('*/5 * * * *', async () => {
+    try {
+      logger.debug('Processing scheduled onboarding queue');
+      await processOnboardingQueue();
+    } catch (error) {
+      logger.error('Error in scheduled onboarding processing', {
+        error: error.message,
+        stack: error.stack
+      });
+    }
+  });
+  
+  return job;
+};
+
+/**
+ * Schedule all automated tasks
+ * @returns {Object} - Object containing all scheduled jobs
+ */
+const scheduleAllTasks = () => {
+  const callJob = schedulePhoneCalls();
+  const onboardingJob = scheduleOnboardingProcessing();
+  
+  return {
+    callJob,
+    onboardingJob
+  };
+};
+
 module.exports = {
   schedulePhoneCalls,
+  scheduleOnboardingProcessing,
+  scheduleAllTasks,
   triggerManualCallBatch
 };

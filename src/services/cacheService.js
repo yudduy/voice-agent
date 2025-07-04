@@ -43,7 +43,7 @@ async function appendConversation(userId, turn, maxTurns = 15) {
     // Trim the history to the maximum number of turns
     const trimmedHistory = history.slice(-maxTurns);
     
-    await redis.set(key, JSON.stringify(trimmedHistory), 'EX', CONVERSATION_TTL);
+    await redis.set(key, JSON.stringify(trimmedHistory), { ex: CONVERSATION_TTL });
   } catch (error) {
     logger.error(`Error appending conversation for user ${userId} to Redis:`, error);
     throw error;

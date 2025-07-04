@@ -1,8 +1,8 @@
 /**
  * Text to speech service
  * 
- * Note: This service is optional since Twilio's <Say> verb provides text-to-speech.
- * However, we're including it for future extensibility or to implement custom TTS solutions.
+ * Now supports ElevenLabs as the primary TTS provider with Hyperbolic as fallback.
+ * Twilio's <Say> verb remains as the final fallback.
  */
 const logger = require('../utils/logger');
 const telephonyConfig = require('../config/telephony');
@@ -16,6 +16,7 @@ const crypto = require('crypto');
 const ttsCache = new Map();
 const TTS_CACHE_DIR = path.join(__dirname, '..', '..', 'public', 'tts-cache');
 const HYPERBOLIC_CHUNK_THRESHOLD = 150; // Characters - Adjust based on testing
+const ELEVENLABS_CHUNK_THRESHOLD = 2500; // ElevenLabs can handle larger chunks
 
 // Ensure cache directory exists
 fs.mkdir(TTS_CACHE_DIR, { recursive: true })
@@ -25,8 +26,8 @@ fs.mkdir(TTS_CACHE_DIR, { recursive: true })
  * Generate a cache key for TTS request.
  * Uses text and options to create a unique hash.
  */
-const generateCacheKey = (text, options) => {
-  const keyString = JSON.stringify({ text, ...options });
+const generateCacheKey = (text, options, provider = 'default') => {
+  const keyString = JSON.stringify({ text, provider, ...options });
   return crypto.createHash('md5').update(keyString).digest('hex');
 };
 
@@ -266,9 +267,131 @@ const splitIntoSpeechChunks = (text, maxLength = 500) => {
   return chunks;
 };
 
+/**
+ * Core function to generate audio with ElevenLabs API.
+ * @param {string} text - Text to synthesize
+ * @param {object} options - Options (e.g., voice_id, voice_settings)
+ * @returns {Promise<string|null>} - URL to the generated audio file or null on failure
+ */
+const generateElevenLabsAudio = async (text, options = {}) => {
+  if (!aiConfig.elevenLabs.enabled) {
+    logger.debug('ElevenLabs TTS is disabled.');
+    return null;
+  }
+
+  if (!text || text.trim().length === 0) {
+    logger.warn('Skipping ElevenLabs TTS due to empty text.');
+    return null;
+  }
+
+  const voiceId = options.voice_id || aiConfig.elevenLabs.voiceId;
+  const cacheKey = generateCacheKey(text, options, 'elevenlabs');
+  
+  // Check cache first
+  if (ttsCache.has(cacheKey)) {
+    const cachedUrl = ttsCache.get(cacheKey);
+    try {
+      await fs.access(path.join(TTS_CACHE_DIR, path.basename(cachedUrl)));
+      logger.debug('Returning cached ElevenLabs TTS audio', { key: cacheKey, url: cachedUrl });
+      return cachedUrl;
+    } catch (error) { 
+      logger.warn('Cached TTS file not found, removing from cache', { key: cacheKey, url: cachedUrl });
+      ttsCache.delete(cacheKey);
+    }
+  }
+
+  try {
+    logger.debug('Calling ElevenLabs TTS API', { textLength: text.length, voiceId });
+    
+    const requestData = {
+      text: text,
+      ...aiConfig.elevenLabs.defaultOptions,
+      ...options // Allow override of default options
+    };
+
+    const response = await axios({
+      method: 'POST',
+      url: `${aiConfig.elevenLabs.ttsEndpoint}/${voiceId}`,
+      headers: {
+        'Accept': 'audio/mpeg',
+        'Content-Type': 'application/json',
+        'xi-api-key': aiConfig.elevenLabs.apiKey
+      },
+      data: requestData,
+      responseType: 'arraybuffer'
+    });
+
+    if (response.data) {
+      const filename = `${cacheKey}.mp3`;
+      const filePath = path.join(TTS_CACHE_DIR, filename);
+      
+      await fs.writeFile(filePath, response.data);
+      const audioUrl = `/tts-cache/${filename}`;
+      
+      logger.info('Successfully generated ElevenLabs TTS audio', { filename, textLength: text.length });
+      ttsCache.set(cacheKey, audioUrl);
+      return audioUrl;
+    } else {
+      logger.warn('ElevenLabs TTS API response missing audio data');
+      return null;
+    }
+
+  } catch (error) {
+    logger.error('Error calling ElevenLabs TTS API', {
+      error: error.response ? { 
+        status: error.response.status, 
+        data: error.response.data?.toString?.() || error.response.data 
+      } : error.message,
+      textLength: text.length
+    });
+    return null;
+  }
+};
+
+/**
+ * Main TTS generation function that prioritizes ElevenLabs, falls back to Hyperbolic, then Twilio
+ * @param {string} text - Text to synthesize
+ * @param {object} options - Options for TTS
+ * @returns {Promise<string|null>} - URL to the generated audio file or null if all providers fail
+ */
+const generateAudio = async (text, options = {}) => {
+  if (!text || text.trim().length === 0) {
+    logger.warn('Skipping TTS generation due to empty text.');
+    return null;
+  }
+
+  const formattedText = formatTextForSpeech(text);
+  
+  // First try ElevenLabs if it's the preferred provider and enabled
+  if (aiConfig.speechPreferences.ttsPreference === 'elevenlabs' && aiConfig.elevenLabs.enabled) {
+    logger.debug('Attempting ElevenLabs TTS generation');
+    const elevenLabsResult = await generateElevenLabsAudio(formattedText, options);
+    if (elevenLabsResult) {
+      return elevenLabsResult;
+    }
+    logger.warn('ElevenLabs TTS failed, falling back to next provider');
+  }
+
+  // Fall back to Hyperbolic
+  if (aiConfig.hyperbolic.enabled) {
+    logger.debug('Attempting Hyperbolic TTS generation as fallback');
+    const hyperbolicResult = await generateHyperbolicAudio(formattedText, options);
+    if (hyperbolicResult) {
+      return hyperbolicResult;
+    }
+    logger.warn('Hyperbolic TTS failed, will use Twilio as final fallback');
+  }
+
+  // If both fail, return null and let Twilio TTS handle it
+  logger.debug('All custom TTS providers failed, will use Twilio TTS');
+  return null;
+};
+
 module.exports = {
   generateHyperbolicAudio,
   formatTextForSpeech,
   getTwilioTtsOptions,
-  splitIntoSpeechChunks
+  splitIntoSpeechChunks,
+  generateElevenLabsAudio,
+  generateAudio
 };

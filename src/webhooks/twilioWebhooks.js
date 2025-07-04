@@ -26,18 +26,17 @@ const shouldUseGroq = (recordingUrl) => {
 async function addSpeechToResponse(twimlResponse, text) {
   const formattedText = textToSpeech.formatTextForSpeech(text);
   
-  if (aiConfig.hyperbolic.enabled) {
-    try {
-      const audioUrl = await textToSpeech.generateHyperbolicAudio(formattedText);
-      if (audioUrl) {
-        const fullAudioUrl = `${process.env.BASE_URL}${audioUrl}`;
-        logger.debug('Using Hyperbolic TTS via <Play>', { url: fullAudioUrl });
-        twimlResponse.play({}, fullAudioUrl);
-        return;
-      }
-    } catch (hyperbolicError) {
-      logger.error('Error during Hyperbolic TTS generation, falling back to Twilio TTS', { error: hyperbolicError.message });
+  // Try to generate audio with ElevenLabs first, then Hyperbolic, then fall back to Twilio
+  try {
+    const audioUrl = await textToSpeech.generateAudio(formattedText);
+    if (audioUrl) {
+      const fullAudioUrl = `${process.env.BASE_URL}${audioUrl}`;
+      logger.debug('Using custom TTS (ElevenLabs/Hyperbolic) via <Play>', { url: fullAudioUrl });
+      twimlResponse.play({}, fullAudioUrl);
+      return;
     }
+  } catch (ttsError) {
+    logger.error('Error during custom TTS generation, falling back to Twilio TTS', { error: ttsError.message });
   }
   
   logger.debug('Using Twilio TTS via <Say>');
@@ -65,7 +64,7 @@ router.post('/connect', async (req, res) => {
     
     await addSpeechToResponse(response, greeting);
     
-    response.gather({
+    const gatherOptions = {
       input: ['speech'],
       speechTimeout: telephonyConfig.speechTimeout || 'auto',
       speechModel: telephonyConfig.speechModel || 'phone_call',
@@ -73,7 +72,17 @@ router.post('/connect', async (req, res) => {
       method: 'POST',
       language: telephonyConfig.language || 'en-US',
       actionOnEmptyResult: true,
-    });
+    };
+
+    // Enable recording if Groq STT is preferred and recording is enabled
+    if (aiConfig.speechPreferences.enableRecording && aiConfig.speechPreferences.sttPreference === 'groq') {
+      gatherOptions.record = true;
+      gatherOptions.recordingStatusCallback = '/api/calls/recording';
+      gatherOptions.recordingStatusCallbackMethod = 'POST';
+      logger.debug('Recording enabled for Groq STT');
+    }
+    
+    response.gather(gatherOptions);
     
     res.type('text/xml');
     res.send(response.toString());
@@ -102,21 +111,33 @@ router.post('/respond', async (req, res) => {
        const groqResult = await speechToText.transcribeWithGroq(recordingUrl);
        if (groqResult && speechToText.validateSpeechResult(groqResult)) {
          processedInput = groqResult;
+         logger.info('Used Groq STT for transcription', { callSid, textLength: groqResult.length });
        }
     }
     
     if (!processedInput && userInput && speechToText.validateSpeechResult(userInput, twilioConfidence)) {
         processedInput = speechToText.processTwilioSpeechResult(userInput);
+        logger.info('Used Twilio STT for transcription', { callSid, textLength: processedInput.length });
     }
     
     if (!processedInput) { 
         await addSpeechToResponse(response, "I'm sorry, I didn't catch that. Could you please repeat?");
-        response.gather({
+        
+        const gatherOptions = {
           input: ['speech'],
           action: '/api/calls/respond',
           method: 'POST',
           actionOnEmptyResult: true,
-        });
+        };
+
+        // Enable recording for retry if Groq STT is preferred
+        if (aiConfig.speechPreferences.enableRecording && aiConfig.speechPreferences.sttPreference === 'groq') {
+          gatherOptions.record = true;
+          gatherOptions.recordingStatusCallback = '/api/calls/recording';
+          gatherOptions.recordingStatusCallbackMethod = 'POST';
+        }
+        
+        response.gather(gatherOptions);
         return res.type('text/xml').send(response.toString());
     }
 
@@ -127,12 +148,21 @@ router.post('/respond', async (req, res) => {
     if (shouldHangup) {
         response.hangup();
     } else {
-        response.gather({
+        const gatherOptions = {
           input: ['speech'],
           action: '/api/calls/respond',
           method: 'POST',
           actionOnEmptyResult: true,
-        });
+        };
+
+        // Enable recording for next turn if Groq STT is preferred
+        if (aiConfig.speechPreferences.enableRecording && aiConfig.speechPreferences.sttPreference === 'groq') {
+          gatherOptions.record = true;
+          gatherOptions.recordingStatusCallback = '/api/calls/recording';
+          gatherOptions.recordingStatusCallbackMethod = 'POST';
+        }
+        
+        response.gather(gatherOptions);
     }
     
     res.type('text/xml').send(response.toString());

@@ -10,8 +10,8 @@ const openAI = {
   temperature: parseFloat(process.env.AI_TEMPERATURE || '0.3'),
   maxTokens: parseInt(process.env.AI_MAX_TOKENS || '200', 10),
   // SYSTEM PROMPT: This prompt should instruct the AI to generate concise, on-topic responses,
-  // knowing that the generated text will later be converted to audio via Hyperbolic.
-  systemPrompt: `You are a highly specialized voice AI assistant for VERIES. Your sole function is to conduct investor preference interviews with founders using the OpenAI GPT-4 model to generate your text-based responses. All your textual responses will be converted to audio using our dedicated Hyperbolic TTS service. Remain strictly on topic, provide concise responses (1-3 sentences), and do not address unrelated queries.`
+  // knowing that the generated text will later be converted to audio via ElevenLabs.
+  systemPrompt: `You are a highly specialized voice AI assistant for VERIES. Your sole function is to conduct investor preference interviews with founders using the OpenAI GPT-4 model to generate your text-based responses. All your textual responses will be converted to audio using our dedicated ElevenLabs TTS service. Remain strictly on topic, provide concise responses (1-3 sentences), and do not address unrelated queries.`
 };
 
 const hyperbolic = {
@@ -23,10 +23,27 @@ const hyperbolic = {
   enabled: !!process.env.HYPERBOLIC_API_KEY, // Enable this only if the API key is provided
 };
 
+const elevenLabs = {
+  apiKey: process.env.ELEVENLABS_API_KEY,
+  voiceId: process.env.ELEVENLABS_VOICE_ID || 'EXAVITQu4vr4xnSDxMaL', // Default to Bella voice
+  ttsEndpoint: 'https://api.elevenlabs.io/v1/text-to-speech',
+  defaultOptions: {
+    voice_settings: {
+      stability: 0.75,
+      similarity_boost: 0.75,
+      style: 0.0,
+      use_speaker_boost: true
+    },
+    model_id: 'eleven_turbo_v2_5' // Fast, high-quality model
+  },
+  enabled: !!process.env.ELEVENLABS_API_KEY, // Enable this only if the API key is provided
+};
+
 const speechPreferences = {
   sttPreference: process.env.SPEECH_RECOGNITION_PREFERENCE || 'groq', // Default to groq
   enableRecording: process.env.ENABLE_RECORDING === 'true', // Convert string to boolean
   enableGroqStt: process.env.ENABLE_GROQ_TRANSCRIPTION === 'true',
+  ttsPreference: process.env.TTS_PREFERENCE || 'elevenlabs', // Default to ElevenLabs
 };
 
 const groqConfig = {
@@ -38,6 +55,7 @@ const groqConfig = {
 module.exports = {
   openAI,
   hyperbolic,
+  elevenLabs,
   speechPreferences,
   groqConfig,
 };

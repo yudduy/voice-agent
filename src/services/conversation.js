@@ -52,8 +52,8 @@ const initializeConversation = async (callSid, contact) => {
   const userId = contact._id.toString();
   const key = getCallSidKey(callSid);
   
-  // Map callSid to userId with a TTL (e.g., 24 hours)
-  await redis.set(key, userId, 'EX', 24 * 60 * 60);
+  // Upstash Redis client expects options object for TTL
+  await redis.set(key, userId, { ex: 24 * 60 * 60 });
 
   // The conversation history itself is implicitly initialized by the first `append`
   logger.info(`Initialized conversation mapping for call`, { callSid, userId });
