@@ -1,191 +1,228 @@
-# VERIES
+# VERIES Caller (Voice AI Assistant)
 
-Voice AI calling agent for VERIES that autonomously calls potential clients and investors, engages in natural conversation, and captures conversation transcripts.
+Voice-first AI agent that:
 
-## Features
+* places outbound calls via **Twilio**,
+* converses naturally using **Groq Whisper STT → OpenAI GPT-4o → ElevenLabs TTS** pipeline,
+* stores long-term memory in **Supabase Postgres** and short-term context in **Upstash Redis**,
+* logs every call/transcript with comprehensive monitoring.
 
-- Connects to MongoDB to fetch contact information
-- Makes automated phone calls using Twilio
-- Engages in natural conversation using OpenAI's GPT models
-- Records and transcribes calls for follow-up
-- Schedules calls during business hours
-- Handles call status and recording management
+---
+
+## Voice Pipeline Architecture
+
+| Component | Technology | Purpose |
+|-----------|------------|---------|
+| **Speech-to-Text** | Groq Whisper v3 (primary) + Twilio STT (fallback) | High-accuracy transcription with recording |
+| **Conversation AI** | OpenAI GPT-4o | Natural conversation with context awareness |
+| **Text-to-Speech** | ElevenLabs (primary) + Hyperbolic (fallback) + Twilio (final) | Premium voice synthesis |
+| **Telephony** | Twilio Programmable Voice + SMS | Call handling and webhooks |
+| **Database** | Supabase Postgres | User profiles, call history, preferences |
+| **Cache & Memory** | Upstash Redis | Real-time conversation state |
+| **Monitoring** | Winston + Custom voice metrics | Comprehensive logging and debugging |
+
+---
+
+## Key Features
+
+- **Real-time Voice Conversations**: Full duplex voice calls with natural AI responses
+- **High-Quality Audio**: ElevenLabs TTS for premium voice synthesis
+- **Accurate Transcription**: Groq Whisper v3 for superior speech recognition
+- **Persistent Memory**: User profiles and conversation history in Supabase
+- **Context Awareness**: Redis-backed short-term memory for fluid conversations
+- **Fallback Systems**: Multiple TTS/STT providers ensure reliability
+- **Comprehensive Testing**: End-to-end voice call integration tests
+- **Production Ready**: Full webhook infrastructure with status monitoring
+
+---
 
 ## Prerequisites
 
-- Node.js 18.x or higher
-- MongoDB Atlas account (or another MongoDB provider)
-- Twilio account with a phone number
-- OpenAI API key
-- Public URL for webhooks (e.g., ngrok for development)
+* Node 18+
+* **Supabase** project (URL, anon key, **service_role** key)
+* **Upstash Redis** REST URL & token
+* **Twilio** account with voice-capable phone number
+* **ElevenLabs** API key for high-quality TTS
+* **Groq** API key for Whisper STT
+* **OpenAI** API key for GPT-4o conversations
+* Public HTTPS URL for webhooks (use **ngrok** for local dev)
 
-## Getting Started
+---
 
-### 1. Clone the repository
+## Quick Start
 
 ```bash
-git clone <your-repository-url>
+git clone <repo-url>
 cd veries-caller
-```
-
-### 2. Install dependencies
-
-```bash
 npm install
+cp .env.example .env        # Fill in your API keys
+node scripts/voice-test.js  # Test the voice pipeline
 ```
 
-### 3. Set up environment variables
+### Required Environment Variables
 
-Copy the example environment file and fill in your values:
-
-```bash
-cp .env.example .env
-```
-
-Edit the `.env` file with your credentials:
-
-```bash
-# MongoDB
-MONGODB_URI=mongodb+srv://your-mongodb-connection-string
-
-# Twilio
+```env
+# Twilio (Telephony)
 TWILIO_ACCOUNT_SID=your_account_sid
 TWILIO_AUTH_TOKEN=your_auth_token
 TWILIO_PHONE_NUMBER=+1234567890
 
-# OpenAI
-OPENAI_API_KEY=your_openai_api_key
-OPENAI_MODEL=gpt-4o
+# Voice Pipeline
+ELEVENLABS_API_KEY=your_elevenlabs_key
+ELEVENLABS_VOICE_ID=your_voice_id
+GROQ_API_KEY=your_groq_key
+OPENAI_API_KEY=your_openai_key
 
-# Hyperbolic AI (Optional - for enhanced TTS)
-# Used if enabling Hyperbolic Text-to-Speech feature
-HYPERBOLIC_API_KEY=your_hyperbolic_api_key
+# Database & Cache
+SUPABASE_URL=your_supabase_url
+SUPABASE_ANON_KEY=your_anon_key
+SUPABASE_SERVICE_ROLE_KEY=your_service_role_key
+UPSTASH_REDIS_REST_URL=your_redis_url
+UPSTASH_REDIS_REST_TOKEN=your_redis_token
 
-# Speech Service Preferences
-# Ensure Twilio call recording is enabled if using Whisper
-ENABLE_RECORDING=true 
-# Choose preferred STT service: 'whisper' or 'twilio'
-SPEECH_RECOGNITION_PREFERENCE=whisper
-
-# Groq API for Speech-to-Text (Optional, requires SPEECH_RECOGNITION_PREFERENCE='groq')
-GROQ_API_KEY=your_groq_api_key
-GROQ_WHISPER_MODEL=whisper-large-v3 # Or whisper-large-v3-turbo
-ENABLE_GROQ_TRANSCRIPTION=true
-
-# Server config
-PORT=3000
-WEBHOOK_BASE_URL=https://your-webhook-domain.com
+# Webhooks (for local dev)
+WEBHOOK_BASE_URL=https://your-ngrok-url.ngrok-free.app
+TEST_PHONE=+19713364433
 ```
 
-### 4. Set up public URL for webhooks
-
-For development, you can use ngrok:
-
-```bash
-ngrok http 3000
-```
-
-Then update your `.env` file with the ngrok URL:
-
-```
-WEBHOOK_BASE_URL=https://your-ngrok-url.ngrok.io
-```
-
-### 5. Start the server
-
-For development:
-
-```bash
-npm run dev
-```
-
-For production:
-
-```bash
-npm start
-```
+---
 
 ## Project Structure
 
 ```
-veries-caller/
-├── src/
-│   ├── app.js                     # Main application entry point
-│   ├── config/                    # Configuration settings
-│   │   ├── database.js            # MongoDB connection config
-│   │   ├── telephony.js           # Twilio config
-│   │   └── ai.js                  # AI model configs
-│   ├── services/
-│   │   ├── database.js            # MongoDB connection service
-│   │   ├── caller.js              # Call initiation service
-│   │   ├── conversation.js        # AI conversation flow manager
-│   │   ├── speechToText.js        # Speech recognition service
-│   │   ├── textToSpeech.js        # Voice synthesis service
-│   │   └── transcript.js          # Call recording/transcription
-│   ├── models/
-│   │   ├── contact.js             # Contact data model
-│   │   └── call.js                # Call data model for tracking calls
-│   ├── utils/
-│   │   ├── logger.js              # Logging utilities
-│   │   └── prompt.js              # Conversation prompts for AI
-│   └── webhooks/
-│       └── twilioWebhooks.js      # Webhook handlers for Twilio
-├── .env                           # Environment variables
-├── package.json                   # Project dependencies
-└── README.md                      # Project documentation
+src/
+├─ app.js                   # Express server with webhook endpoints
+├─ config/
+│  ├─ ai.js                 # AI providers (OpenAI, Groq, ElevenLabs)
+│  ├─ supabase.js           # Database client configuration
+│  ├─ redis.js              # Cache client configuration
+│  └─ telephony.js          # Twilio client setup
+├─ services/
+│  ├─ conversation.js       # OpenAI conversation handling
+│  ├─ speechToText.js       # Groq Whisper STT integration
+│  ├─ textToSpeech.js       # ElevenLabs TTS with fallbacks
+│  ├─ caller.js             # Outbound call management
+│  └─ cacheService.js       # Redis conversation memory
+├─ webhooks/
+│  └─ twilioWebhooks.js     # Voice call webhooks (/connect, /respond)
+├─ repositories/            # Supabase data access layer
+└─ utils/
+   ├─ logger.js             # Winston-based logging
+   └─ voiceMonitor.js       # Voice pipeline performance metrics
+
+scripts/
+├─ voice-test.js            # Main voice pipeline test
+└─ setup-user.js            # Mock user account creation
+
+logs/                       # Centralized application logs
 ```
 
-## Testing
+---
 
-To test the system manually, you can use the test endpoint:
+## Testing the Voice Pipeline
 
-```
-POST /api/calls/test
-Content-Type: application/json
-
-{
-  "phone": "+1234567890"
-}
+### 1. Basic Voice Test
+```bash
+# Tests full Groq STT → OpenAI LLM → ElevenLabs TTS pipeline
+node scripts/voice-test.js
 ```
 
-This will initiate a test call to the specified number.
+This script:
+- Creates a mock user in Supabase with all required database entries
+- Places a real call to your test phone number
+- Validates Groq STT transcription with recording enabled
+- Tests OpenAI GPT-4o conversation responses
+- Verifies ElevenLabs TTS generation and playback
+- Monitors conversation state in Redis
+- Logs all API calls and performance metrics
 
-## Security Considerations
+### 2. User Setup Utility
+```bash
+# Creates a mock user account for testing
+node scripts/setup-user.js
+```
 
-- For production, uncomment and configure the Twilio request validation middleware
-- Set up proper authentication for any admin interfaces
-- Keep your API keys and tokens secure
-- Implement rate limiting for webhook endpoints
+---
 
-## License
+## Supabase Database Schema
 
-This project is open-source licensed under the MIT License. See the [LICENSE](LICENSE) file for details.
+The application uses the following Supabase tables:
 
+- **`auth.users`** - Core user authentication (managed by Supabase)
+- **`phone_links`** - Phone number to user ID mapping
+- **`user_profiles`** - Extended user information and onboarding status
+- **`preferences`** - User voice and conversation preferences
+- **`call_history`** - Complete call logs with transcripts and summaries
+- **`sms_history`** - SMS conversation logs
+- **`onboarding_messages`** - User onboarding workflow tracking
+
+See `SUPABASE.md` for complete schema documentation.
+
+---
+
+## Voice Pipeline Monitoring
+
+The system includes comprehensive logging for debugging voice calls:
+
+### Real-time Logging
+- **Groq STT**: Transcription accuracy, response times, audio processing
+- **OpenAI LLM**: Token usage, response times, conversation context
+- **ElevenLabs TTS**: Audio generation, caching, fallback usage
+- **Twilio**: Call status, webhook events, recording URLs
+- **Supabase**: Database operations, user state changes
+
+### Log Files
+- `logs/combined.log` - All application events
+- `logs/error.log` - Error events only
+
+### Performance Metrics
+```javascript
+// Access voice pipeline metrics
+const voiceMonitor = require('./src/utils/voiceMonitor');
+const metrics = voiceMonitor.getMetricsSummary();
+```
+
+---
+
+## Production Deployment
+
+### Webhook Configuration
+Configure these endpoints in your Twilio Console:
+
+- **Voice Webhook**: `POST https://your-domain.com/api/calls/connect`
+- **Status Callback**: `POST https://your-domain.com/api/calls/status`
+- **SMS Webhook**: `POST https://your-domain.com/webhooks/sms`
+
+### Environment Setup
+- Set `NODE_ENV=production`
+- Use `SUPABASE_SERVICE_ROLE_KEY` for server operations
+- Configure proper Redis connection pooling
+- Enable webhook authentication for security
+
+---
 
 ## Troubleshooting
 
-Here are some common issues and how to resolve them:
+| Issue | Cause | Solution |
+|-------|-------|---------|
+| **"RLS policy violation"** | Using anon key server-side | Use `SUPABASE_SERVICE_ROLE_KEY` |
+| **ElevenLabs TTS fails** | Invalid API key or quota | Check API key, falls back to Hyperbolic/Twilio |
+| **Groq STT not working** | Recording disabled or invalid key | Enable `ENABLE_RECORDING=true` and verify Groq key |
+| **Webhook 404s** | Ngrok URL changed | Update `WEBHOOK_BASE_URL` and Twilio console |
+| **Call history missing** | Status callback delays | Check Twilio webhook logs, increase polling time |
 
-- **MongoDB Connection Issues:**
-  - Ensure your `MONGODB_URI` in `.env` is correct and that your IP address is whitelisted in MongoDB Atlas (if applicable).
-  - Check the server logs (`logs/app.log`) for specific connection error messages.
+---
 
-- **ObjectId Casting Errors (e.g., in /test endpoint):**
-  - When using endpoints that accept a `contactId` (like `/api/calls/test`), ensure the provided ID is a valid 24-character hexadecimal MongoDB ObjectId.
-  - The system is designed to handle temporary test contacts (created using only a phone number) by skipping database operations that would cause errors.
+## Voice Quality Optimization
 
-- **Twilio Call Failures (e.g., call hangs up after start):**
-  - **Webhook URL:** Verify that the `WEBHOOK_BASE_URL` in your `.env` file is correct and publicly accessible. Use `https://`.
-  - **ngrok:** If using ngrok, ensure it's running and the URL in `.env` matches the current ngrok session URL.
-  - **Twilio Configuration:** Double-check that the webhook URLs configured in your Twilio Phone Number settings (for Voice & Fax) point to the correct endpoints on your server (e.g., `https://your-webhook-domain.com/api/calls/connect`).
-  - **Server Logs:** Check the server logs (`logs/app.log`) for errors reported by the Twilio webhook handlers (`/api/calls/connect`, `/api/calls/respond`, `/api/calls/status`). Enhanced logging provides error messages, types, and stack traces.
-  - **Twilio Debugger:** Use the Twilio Console Debugger (Monitor -> Logs -> Errors) to see if Twilio reported any errors fetching or executing your webhooks.
+- **ElevenLabs**: Provides studio-quality voice synthesis
+- **Groq Whisper v3**: Industry-leading speech recognition accuracy
+- **Recording Enabled**: Allows Groq to process full audio for better transcription
+- **Fallback Chain**: Ensures calls never fail due to single provider issues
+- **Caching**: TTS audio cached to reduce latency on repeated phrases
 
-- **AI Response Issues (e.g., empty or strange responses):**
-  - **OpenAI API Key:** Ensure your `OPENAI_API_KEY` in `.env` is valid and has sufficient credits/quota.
-  - **Model:** Check that the `OPENAI_MODEL` specified in `.env` (and used in `src/config/ai.js`) is available to your OpenAI account.
-  - **Server Logs:** Look for errors related to the `conversationService` or OpenAI API calls in `logs/app.log`.
+---
 
-- **Environment Variables:**
-  - Make sure you have copied `.env.example` to `.env` and filled in *all* required values.
-  - Restart the server after making any changes to the `.env` file.
+## License
+
+MIT © VERIES Team

@@ -90,6 +90,14 @@ const getResponse = async (userInput, callSid) => {
     // --- Generate Prompt ---
     const messages = await promptUtils.generatePersonalizedPrompt(contact, conversationHistory, userId);
     
+    logger.debug('[getResponse] Calling OpenAI API', { 
+      callSid, 
+      userId, 
+      model: aiConfig.openAI.model,
+      messageCount: messages.length,
+      userInputLength: userInput.length
+    });
+    
     // --- OpenAI API Call ---
     const completion = await openai.chat.completions.create({
       model: aiConfig.openAI.model,
@@ -100,6 +108,13 @@ const getResponse = async (userInput, callSid) => {
     
     const aiResponse = completion.choices[0].message.content.trim();
     const assistantTurn = { role: 'assistant', content: aiResponse };
+
+    logger.debug('[getResponse] OpenAI API response received', {
+      callSid,
+      userId,
+      responseLength: aiResponse.length,
+      tokensUsed: completion.usage?.total_tokens || 'unknown'
+    });
 
     // --- Topic Tracking ---
     const topicMatch = /<topic:(\w+)>/i.exec(aiResponse);
@@ -125,7 +140,7 @@ const getResponse = async (userInput, callSid) => {
     
     return { text: aiResponse, shouldHangup };
   } catch (error) {
-    logger.error('[getResponse] Error generating AI response', { callSid, userId, error: error.message });
+    logger.error('[getResponse] Error generating AI response', { callSid, userId, error: error.message, stack: error.stack });
     return { 
         text: "I seem to be having technical difficulties. Let's pause here, and someone will follow up shortly. Thank you.", 
         shouldHangup: true

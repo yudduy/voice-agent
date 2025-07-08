@@ -18,11 +18,36 @@ const getConversationKey = (userId) => `conversation:${userId}`;
 async function getConversation(userId) {
   try {
     const key = getConversationKey(userId);
-    const historyJson = await redis.get(key);
-    return historyJson ? JSON.parse(historyJson) : [];
+    const historyData = await redis.get(key);
+    
+    if (!historyData) {
+      return [];
+    }
+    
+    // Handle different data types from Upstash Redis
+    if (typeof historyData === 'string') {
+      return JSON.parse(historyData);
+    } else if (Array.isArray(historyData)) {
+      return historyData;
+    } else if (typeof historyData === 'object') {
+      logger.warn(`Unexpected object type from Redis for user ${userId}, resetting conversation`, { 
+        dataType: typeof historyData,
+        data: historyData 
+      });
+      // Clear the corrupted data and return empty array
+      await clearConversation(userId);
+      return [];
+    } else {
+      logger.error(`Unexpected data type from Redis for user ${userId}:`, {
+        dataType: typeof historyData,
+        data: historyData
+      });
+      return [];
+    }
   } catch (error) {
-    logger.error(`Error getting conversation for user ${userId} from Redis:`, error);
-    throw error;
+    logger.error(`Error getting conversation for user ${userId} from Redis:`, error.message);
+    // Return empty array on error to prevent cascade failures
+    return [];
   }
 }
 
@@ -38,15 +63,55 @@ async function appendConversation(userId, turn, maxTurns = 15) {
     const key = getConversationKey(userId);
     const history = (await getConversation(userId)) || [];
     
+    // Ensure turn is a valid object
+    if (!turn || typeof turn !== 'object' || !turn.role || !turn.content) {
+      logger.error(`Invalid turn object for user ${userId}:`, turn);
+      return;
+    }
+    
     history.push(turn);
     
     // Trim the history to the maximum number of turns
     const trimmedHistory = history.slice(-maxTurns);
     
-    await redis.set(key, JSON.stringify(trimmedHistory), { ex: CONVERSATION_TTL });
+    // Ensure we're storing as JSON string for consistency
+    const jsonString = JSON.stringify(trimmedHistory);
+    await redis.set(key, jsonString, { ex: CONVERSATION_TTL });
+    
+    logger.debug(`Appended conversation turn for user ${userId}`, {
+      turnRole: turn.role,
+      historyLength: trimmedHistory.length
+    });
   } catch (error) {
-    logger.error(`Error appending conversation for user ${userId} to Redis:`, error);
-    throw error;
+    logger.error(`Error appending conversation for user ${userId} to Redis:`, error.message);
+    // Don't throw to prevent cascade failures
+  }
+}
+
+/**
+ * Sets the complete conversation history for a user.
+ * @param {string} userId - The user's unique identifier.
+ * @param {Array<object>} conversation - The complete conversation history.
+ * @returns {Promise<void>}
+ */
+async function setConversation(userId, conversation) {
+  try {
+    const key = getConversationKey(userId);
+    
+    // Validate conversation array
+    if (!Array.isArray(conversation)) {
+      logger.error(`Invalid conversation array for user ${userId}:`, conversation);
+      return;
+    }
+    
+    const jsonString = JSON.stringify(conversation);
+    await redis.set(key, jsonString, { ex: CONVERSATION_TTL });
+    
+    logger.debug(`Set conversation history for user ${userId}`, {
+      historyLength: conversation.length
+    });
+  } catch (error) {
+    logger.error(`Error setting conversation for user ${userId} to Redis:`, error.message);
   }
 }
 
@@ -59,14 +124,15 @@ async function clearConversation(userId) {
   try {
     const key = getConversationKey(userId);
     await redis.del(key);
+    logger.debug(`Cleared conversation history for user ${userId}`);
   } catch (error) {
-    logger.error(`Error clearing conversation for user ${userId} from Redis:`, error);
-    throw error;
+    logger.error(`Error clearing conversation for user ${userId} from Redis:`, error.message);
   }
 }
 
 module.exports = {
   getConversation,
+  setConversation,
   appendConversation,
   clearConversation,
 }; 

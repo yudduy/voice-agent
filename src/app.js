@@ -11,7 +11,6 @@ const { processOnboardingQueue } = require('./services/smsHandler');
 const logger = require('./utils/logger');
 const path = require('path');
 const fs = require('fs');
-const contactMonitor = require('./services/contactMonitor');
 const voiceMonitor = require('./utils/voiceMonitor');
 const rateLimit = require('express-rate-limit');
 
@@ -149,11 +148,8 @@ const startServer = async () => {
     
     logger.info('AI Caller application started successfully');
     
-    contactMonitor.startWatcher();
-
   } catch (error) {
     logger.error('Failed to start application', error);
-    contactMonitor.stopWatcher(); 
     process.exit(1);
   }
 };
@@ -161,7 +157,6 @@ const startServer = async () => {
 // Graceful shutdown handler
 const gracefulShutdown = (signal) => {
   logger.info(`${signal} signal received. Shutting down gracefully...`);
-  contactMonitor.stopWatcher(true);
   // No database.disconnect() needed for Supabase
   logger.info('Exiting process.');
   process.exit(0);

@@ -8,7 +8,8 @@ const logger = require('../utils/logger');
 const telephonyConfig = require('../config/telephony');
 const aiConfig = require('../config/ai');
 const axios = require('axios');
-const fs = require('fs').promises;
+const fs = require('fs');
+const fsp = require('fs').promises;
 const path = require('path');
 const crypto = require('crypto');
 
@@ -19,7 +20,7 @@ const HYPERBOLIC_CHUNK_THRESHOLD = 150; // Characters - Adjust based on testing
 const ELEVENLABS_CHUNK_THRESHOLD = 2500; // ElevenLabs can handle larger chunks
 
 // Ensure cache directory exists
-fs.mkdir(TTS_CACHE_DIR, { recursive: true })
+fsp.mkdir(TTS_CACHE_DIR, { recursive: true })
   .catch(err => logger.error('Error creating TTS cache directory', { error: err.message }));
 
 /**
@@ -136,7 +137,7 @@ const generateHyperbolicAudio = async (text, options = {}) => {
   if (ttsCache.has(cacheKey)) {
     const cachedUrl = ttsCache.get(cacheKey);
     try {
-      await fs.access(path.join(TTS_CACHE_DIR, path.basename(cachedUrl)));
+      await fsp.access(path.join(TTS_CACHE_DIR, path.basename(cachedUrl)));
       logger.debug('Returning cached Hyperbolic TTS audio', { key: cacheKey, url: cachedUrl });
       return cachedUrl;
     } catch (error) { 
@@ -188,7 +189,7 @@ const generateHyperbolicAudio = async (text, options = {}) => {
   const filePath = path.join(TTS_CACHE_DIR, filename);
 
   try {
-    await fs.writeFile(filePath, combinedBuffer);
+    await fsp.writeFile(filePath, combinedBuffer);
     const audioUrl = `/tts-cache/${filename}`; // URL relative to server root
     logger.info('Successfully generated and combined Hyperbolic TTS audio', { filename, chunks: textChunks.length });
     ttsCache.set(cacheKey, audioUrl); // Cache the final URL
@@ -284,68 +285,73 @@ const generateElevenLabsAudio = async (text, options = {}) => {
     return null;
   }
 
-  const voiceId = options.voice_id || aiConfig.elevenLabs.voiceId;
   const cacheKey = generateCacheKey(text, options, 'elevenlabs');
-  
-  // Check cache first
   if (ttsCache.has(cacheKey)) {
     const cachedUrl = ttsCache.get(cacheKey);
     try {
-      await fs.access(path.join(TTS_CACHE_DIR, path.basename(cachedUrl)));
+      await fsp.access(path.join(TTS_CACHE_DIR, path.basename(cachedUrl)));
       logger.debug('Returning cached ElevenLabs TTS audio', { key: cacheKey, url: cachedUrl });
       return cachedUrl;
-    } catch (error) { 
+    } catch (error) {
       logger.warn('Cached TTS file not found, removing from cache', { key: cacheKey, url: cachedUrl });
       ttsCache.delete(cacheKey);
     }
   }
 
-  try {
-    logger.debug('Calling ElevenLabs TTS API', { textLength: text.length, voiceId });
-    
-    const requestData = {
+  const voiceId = options.voice_id || aiConfig.elevenLabs.voiceId;
+  const url = aiConfig.elevenLabs.streamTtsEndpoint.replace('{voiceId}', voiceId);
+
+  const requestOptions = {
+    method: 'POST',
+    url: url,
+    headers: {
+      'Accept': 'audio/mpeg',
+      'xi-api-key': aiConfig.elevenLabs.apiKey,
+      'Content-Type': 'application/json',
+    },
+    data: {
       text: text,
       ...aiConfig.elevenLabs.defaultOptions,
-      ...options // Allow override of default options
-    };
+      ...options,
+    },
+    responseType: 'stream',
+  };
 
-    const response = await axios({
-      method: 'POST',
-      url: `${aiConfig.elevenLabs.ttsEndpoint}/${voiceId}`,
-      headers: {
-        'Accept': 'audio/mpeg',
-        'Content-Type': 'application/json',
-        'xi-api-key': aiConfig.elevenLabs.apiKey
-      },
-      data: requestData,
-      responseType: 'arraybuffer'
+  const filename = `${cacheKey}.mp3`;
+  const filePath = path.join(TTS_CACHE_DIR, filename);
+  const writer = fs.createWriteStream(filePath);
+
+  logger.debug('Calling ElevenLabs Streaming TTS API', { url });
+
+  return new Promise((resolve, reject) => {
+    axios(requestOptions).then(response => {
+      response.data.pipe(writer);
+
+      writer.on('finish', () => {
+        const audioUrl = `/tts-cache/${filename}`;
+        logger.info('Successfully generated ElevenLabs TTS audio via streaming', { filename });
+        ttsCache.set(cacheKey, audioUrl);
+        resolve(audioUrl);
+      });
+
+      writer.on('error', (err) => {
+        logger.error('Failed to write ElevenLabs audio stream to file', { filename, error: err.message });
+        fsp.unlink(filePath).catch(e => logger.error('Failed to unlink broken TTS file', { file: filePath, error: e.message }));
+        reject(err);
+      });
+
+      response.data.on('error', (err) => {
+         logger.error('Error in ElevenLabs audio stream response', { filename, error: err.message });
+         writer.end();
+         reject(err);
+      });
+
+    }).catch(error => {
+      const errorMsg = error.response ? { status: error.response.status, data: error.response.data } : error.message;
+      logger.error('Error calling ElevenLabs Streaming TTS API', { error: errorMsg });
+      reject(error);
     });
-
-    if (response.data) {
-      const filename = `${cacheKey}.mp3`;
-      const filePath = path.join(TTS_CACHE_DIR, filename);
-      
-      await fs.writeFile(filePath, response.data);
-      const audioUrl = `/tts-cache/${filename}`;
-      
-      logger.info('Successfully generated ElevenLabs TTS audio', { filename, textLength: text.length });
-      ttsCache.set(cacheKey, audioUrl);
-      return audioUrl;
-    } else {
-      logger.warn('ElevenLabs TTS API response missing audio data');
-      return null;
-    }
-
-  } catch (error) {
-    logger.error('Error calling ElevenLabs TTS API', {
-      error: error.response ? { 
-        status: error.response.status, 
-        data: error.response.data?.toString?.() || error.response.data 
-      } : error.message,
-      textLength: text.length
-    });
-    return null;
-  }
+  });
 };
 
 /**

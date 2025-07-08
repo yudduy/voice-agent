@@ -98,25 +98,41 @@ async function linkPhoneNumberToUser(userId, phoneNumber) {
  * @returns {Promise<object|null>} The user record or null if not found.
  */
 async function findUser({ id }) {
-  if (!id) return null;
+  if (!id) {
+    logger.debug('findUser called with no ID');
+    return null;
+  }
 
   try {
     // Query the Auth table via admin API (service role key required)
     const { data, error } = await supabase.auth.admin.getUserById(id);
 
     if (error) {
+      // Handle specific error cases
+      if (error.code === 'user_not_found' || error.message.includes('User not found')) {
+        logger.debug('User not found in auth.users table', { id });
+        return null;
+      }
+      
       // Log but do not throw – conversation service will continue with a fallback name
       logger.warn('Error querying user by ID in findUser (continuing without user)', {
         id,
-        error: error.message,
+        error: error.message || 'Database error loading user',
+        errorCode: error.code || 'unknown'
       });
       return null;
     }
 
+    if (!data || !data.user) {
+      logger.debug('No user data returned from auth.admin.getUserById', { id });
+      return null;
+    }
+
     // The user object is nested under `user` in the response
+    logger.debug('Successfully found user by ID', { id, email: data.user.email });
     return data.user;
   } catch (err) {
-    logger.error('Unexpected error in findUser', { id, error: err.message });
+    logger.error('Unexpected error in findUser', { id, error: err.message, stack: err.stack });
     return null;
   }
 }

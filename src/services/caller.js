@@ -40,7 +40,7 @@ const initiateCall = async (contact) => {
       to: phoneNumberToCall,
       from: telephonyConfig.phoneNumber,
       statusCallback: `${telephonyConfig.webhookBaseUrl}/api/calls/status`,
-      statusCallbackEvent: ['completed'], // We only care about the final status
+      statusCallbackEvent: ['initiated', 'ringing', 'answered', 'completed', 'busy', 'failed', 'no-answer'],
       statusCallbackMethod: 'POST',
       record: true,
       recordingStatusCallback: `${telephonyConfig.webhookBaseUrl}/api/calls/recording`
