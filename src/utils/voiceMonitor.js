@@ -4,8 +4,9 @@
  * Tracks performance metrics for TTS requests handled by voiceService.js.
  */
 const logger = require('./logger');
+const { cache: cacheConfig } = require('../config');
 
-const MAX_HISTORY = 100; // Keep history for the last 100 requests for averages
+const MAX_HISTORY = cacheConfig.voiceMonitor.maxHistory;
 
 const metrics = {
   ttsRequests: 0,    // Total requests handled by generateSpeech (including cache checks)

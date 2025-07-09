@@ -7,7 +7,14 @@
     "start": "node src/app.js",
     "dev": "nodemon src/app.js",
     "test": "jest",
-    "lint": "eslint ."
+    "test:watch": "jest --watch",
+    "test:coverage": "jest --coverage",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "voice-test": "node scripts/unified-voice-test.js",
+    "voice-test:basic": "node scripts/unified-voice-test.js --mode=basic",
+    "voice-test:streaming": "node scripts/unified-voice-test.js --mode=streaming",
+    "voice-test:advanced": "node scripts/unified-voice-test.js --mode=advanced"
   },
   "jest": {
     "setupFilesAfterEnv": [
@@ -31,27 +38,22 @@
   "dependencies": {
     "@supabase/supabase-js": "^2.38.4",
     "@upstash/redis": "^1.35.1",
-    "aws-sdk": "^2.1481.0",
     "axios": "^1.8.4",
     "dotenv": "^16.3.1",
-    "eslint": "^9.30.1",
+    "express": "^4.18.2",
     "express-rate-limit": "^7.5.0",
-    "form-data": "^4.0.2",
-    "glob": "^11.0.1",
+    "fastest-levenshtein": "^1.0.16",
     "groq-sdk": "^0.19.0",
-    "ioredis": "^5.4.1",
-    "jest": "^30.0.4",
     "node-schedule": "^2.1.1",
     "openai": "^4.93.0",
-    "pg": "^8.16.3",
-    "redis": "^4.6.15",
     "twilio": "^4.15.0",
     "winston": "^3.10.0"
   },
   "devDependencies": {
+    "eslint": "^9.30.1",
     "eslint-plugin-jest": "^28.6.0",
-    "express": "^5.1.0",
     "ioredis-mock": "^8.9.0",
+    "jest": "^30.0.4",
     "ngrok": "^5.0.0-beta.2",
     "nock": "^13.5.4",
     "nodemon": "^3.0.1",

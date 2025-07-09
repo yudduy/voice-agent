@@ -12,4 +12,19 @@ async function markCovered(userId, topic) {
   await redis.set(KEY(userId), JSON.stringify([...topics]), { ex: 60*60*24 });
 }
 
-module.exports = { getCovered, markCovered }; 
+/**
+ * Track topics in conversation (alias for markCovered for compatibility)
+ * @param {string} userId - User ID
+ * @param {string|Array} topics - Topic(s) to track
+ */
+async function trackTopics(userId, topics) {
+  if (Array.isArray(topics)) {
+    for (const topic of topics) {
+      await markCovered(userId, topic);
+    }
+  } else {
+    await markCovered(userId, topics);
+  }
+}
+
+module.exports = { getCovered, markCovered, trackTopics }; 

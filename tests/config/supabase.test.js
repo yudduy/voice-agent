@@ -45,7 +45,7 @@ describe('Supabase Client Configuration', () => {
 
       expect(() => {
         require('../../src/config/supabase');
-      }).toThrow('Supabase URL and Anon Key are required.');
+      }).toThrow('Supabase URL and a valid key are required.');
     });
 
     it('should throw an error if SUPABASE_ANON_KEY is not defined', () => {
@@ -54,7 +54,7 @@ describe('Supabase Client Configuration', () => {
 
       expect(() => {
         require('../../src/config/supabase');
-      }).toThrow('Supabase URL and Anon Key are required.');
+      }).toThrow('Supabase URL and a valid key are required.');
     });
   });
 }); 

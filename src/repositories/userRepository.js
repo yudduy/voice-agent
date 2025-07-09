@@ -10,7 +10,7 @@ const logger = require('../utils/logger');
 async function findUserByPhoneNumber(phoneNumber) {
   const { data, error } = await supabase
     .from('phone_links')
-    .select('user_id, users(*)')
+    .select('user_id')
     .eq('phone_number', phoneNumber)
     .single();
 
@@ -19,8 +19,23 @@ async function findUserByPhoneNumber(phoneNumber) {
     throw error;
   }
 
-  if (!data || !data.users) return null;
-  return data.users;
+  if (!data) return null;
+
+  // Get user from Supabase Auth
+  const { data: authUser, error: authError } = await supabase.auth.admin.getUserById(data.user_id);
+  
+  if (authError) {
+    logger.error('Error finding auth user:', authError);
+    return null;
+  }
+
+  // Return user with consistent format
+  return {
+    id: authUser.user.id,
+    phone: authUser.user.phone,
+    name: authUser.user.user_metadata?.name || null,
+    email: authUser.user.email
+  };
 }
 
 /**
@@ -30,37 +45,55 @@ async function findUserByPhoneNumber(phoneNumber) {
  * @returns {Promise<object>} The newly created guest user object.
  */
 async function createGuestUserAndLinkPhone(phoneNumber) {
-  // 1. Create a user in Supabase Auth
-  const { data: authData, error: authError } = await supabase.auth.admin.createUser({
-    phone: phoneNumber,
-    phone_confirm: true, // Mark phone as confirmed since we're interacting via it
-    user_metadata: {
-      is_guest: true,
-      original_phone_number: phoneNumber,
-    },
-  });
-
-  if (authError) {
-    logger.error('Error creating guest user in Supabase Auth:', authError);
-    throw authError;
-  }
-  const user = authData.user;
-  // 2. Link the phone number in the phone_links table
-  const { error: linkError } = await supabase
-    .from('phone_links')
-    .insert({
-      user_id: user.id,
-      phone_number: phoneNumber,
+  try {
+    // 1. Create a user in Supabase Auth (simplified approach)
+    const { data: authData, error: authError } = await supabase.auth.admin.createUser({
+      email: `guest+${Date.now()}@veries.app`, // Use email instead of phone to avoid conflicts
+      user_metadata: {
+        is_guest: true,
+        phone_number: phoneNumber,
+        name: `Guest User`,
+      },
+      email_confirm: true, // Auto-confirm since it's a guest user
     });
 
-  if (linkError) {
-    logger.error(`Error linking phone number for guest user ${user.id}:`, linkError);
-    // Attempt to clean up the created auth user if linking fails
-    await supabase.auth.admin.deleteUser(user.id);
-    throw linkError;
-  }
+    if (authError) {
+      logger.error('Error creating guest user in Supabase Auth:', authError);
+      throw authError;
+    }
+    
+    const user = authData.user;
+    logger.info('Created guest user in Auth', { userId: user.id, phoneNumber });
 
-  return user;
+    // 2. Link the phone number in the phone_links table
+    const { error: linkError } = await supabase
+      .from('phone_links')
+      .insert({
+        user_id: user.id,
+        phone_number: phoneNumber,
+        verified: true, // Mark as verified since we're creating for voice interaction
+      });
+
+    if (linkError) {
+      logger.error(`Error linking phone number for guest user ${user.id}:`, linkError);
+      // Attempt to clean up the created auth user if linking fails
+      await supabase.auth.admin.deleteUser(user.id);
+      throw linkError;
+    }
+
+    logger.info('Successfully created and linked guest user', { userId: user.id, phoneNumber });
+
+    // Return user with consistent format
+    return {
+      id: user.id,
+      phone: phoneNumber, // Use the actual phone number, not from auth
+      name: user.user_metadata?.name || 'Guest User',
+      email: user.email
+    };
+  } catch (error) {
+    logger.error('Failed to create guest user:', error);
+    throw error;
+  }
 }
 
 /**
@@ -140,6 +173,7 @@ async function findUser({ id }) {
 module.exports = {
   findUser,
   findUserByPhoneNumber,
+  createGuestUser: createGuestUserAndLinkPhone,  // Alias for backwards compatibility
   createGuestUserAndLinkPhone,
   linkPhoneNumberToUser,
 }; 

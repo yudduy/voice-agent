@@ -147,4 +147,67 @@ async function bootstrapUser({ id, phone, name = 'Test User' }) {
   return user;
 }
 
-module.exports = { bootstrapUser }; 
+/**
+ * Delete a user and all associated data
+ * @param {string} userId - The user ID to delete
+ * @returns {Promise<void>}
+ */
+async function deleteUser(userId) {
+  if (!userId) throw new Error('deleteUser requires userId');
+  
+  logger.info('Starting user deletion', { userId });
+  
+  try {
+    // Get phone number for this user
+    const { data: phoneLinks, error: phoneError } = await supabase
+      .from('phone_links')
+      .select('phone_number')
+      .eq('user_id', userId);
+
+    if (phoneError) throw phoneError;
+    
+    if (!phoneLinks || phoneLinks.length === 0) {
+      logger.warn('No phone links found for user', { userId });
+      return;
+    }
+
+    const phoneNumber = phoneLinks[0].phone_number;
+    
+    // Clean up dependent tables (in order to respect foreign key constraints)
+    const tables = ['call_history', 'sms_history', 'onboarding_messages', 'preferences', 'user_profiles', 'phone_links'];
+    
+    for (const table of tables) {
+      try {
+        if (table === 'phone_links') {
+          // For phone_links, delete by phone_number
+          const { error } = await supabase
+            .from(table)
+            .delete()
+            .eq('phone_number', phoneNumber);
+          
+          if (error) throw error;
+        } else {
+          // For other tables, delete by user_id
+          const { error } = await supabase
+            .from(table)
+            .delete()
+            .eq('user_id', userId);
+          
+          if (error) throw error;
+        }
+        
+        logger.info(`Cleaned up ${table} table`, { userId });
+      } catch (error) {
+        logger.error(`Failed to clean up ${table} table`, { userId, error });
+        // Continue with other tables
+      }
+    }
+
+    logger.info('User deletion completed', { userId });
+  } catch (error) {
+    logger.error('Error during user deletion', { userId, error });
+    throw error;
+  }
+}
+
+module.exports = { bootstrapUser, deleteUser }; 

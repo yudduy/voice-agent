@@ -4,7 +4,7 @@
 require('dotenv').config();
 const express = require('express');
 const scheduler = require('./services/scheduler');
-const twilioWebhooks = require('./webhooks/twilioWebhooks');
+const unifiedWebhooks = require('./webhooks/unifiedTwilioWebhooks');
 const audioWebhooks = require('./webhooks/audioWebhooks');
 const smsWebhook = require('./webhooks/smsWebhook');
 const { processOnboardingQueue } = require('./services/smsHandler');
@@ -13,6 +13,7 @@ const path = require('path');
 const fs = require('fs');
 const voiceMonitor = require('./utils/voiceMonitor');
 const rateLimit = require('express-rate-limit');
+const { performance: performanceConfig } = require('./config');
 
 // Create Express app
 const app = express();
@@ -29,6 +30,9 @@ if (!fs.existsSync(cacheDir)) {
   fs.mkdirSync(cacheDir, { recursive: true });
 }
 
+// Trust proxy for ngrok/reverse proxy setups
+app.set('trust proxy', true);
+
 // Middleware
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
@@ -38,15 +42,15 @@ app.use('/tts-cache', express.static(cacheDir));
 
 // Rate limiting
 const apiLimiter = rateLimit({
-	windowMs: 15 * 60 * 1000, // 15 minutes
-	max: 100, // Limit each IP to 100 requests per `window`
+	windowMs: performanceConfig.rateLimit.windowMs,
+	max: performanceConfig.rateLimit.maxRequests,
 	standardHeaders: true,
 	legacyHeaders: false,
 });
 app.use('/api/', apiLimiter);
 
 // Register webhook routes
-app.use('/api/calls', twilioWebhooks);
+app.use('/api/calls', unifiedWebhooks);
 app.use('/api/calls/audio', audioWebhooks);
 app.use('/webhooks', smsWebhook);
 

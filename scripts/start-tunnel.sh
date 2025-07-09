@@ -1,10 +1,4 @@
 #!/bin/bash
-
-# RELIABLE NGROK TUNNEL STARTER
-# =============================
-# This script starts ngrok tunnel manually and saves the URL to .env
-# Use this when the Node.js ngrok package has issues
-
 set -e
 
 PORT=${PORT:-3000}

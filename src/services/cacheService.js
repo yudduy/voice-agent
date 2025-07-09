@@ -1,7 +1,8 @@
 const redis = require('../config/redis');
 const logger = require('../utils/logger');
+const { cache: cacheConfig } = require('../config');
 
-const CONVERSATION_TTL = 24 * 60 * 60; // 24 hours in seconds
+const CONVERSATION_TTL = cacheConfig.conversation.ttl;
 
 /**
  * Generates the Redis key for a user's conversation history.
@@ -130,9 +131,20 @@ async function clearConversation(userId) {
   }
 }
 
+/**
+ * Updates the conversation history for a user (alias for setConversation).
+ * @param {string} userId - The user's unique identifier.
+ * @param {Array<object>} conversation - The complete conversation history.
+ * @returns {Promise<void>}
+ */
+async function updateConversation(userId, conversation) {
+  return setConversation(userId, conversation);
+}
+
 module.exports = {
   getConversation,
   setConversation,
+  updateConversation, // Add the missing alias
   appendConversation,
   clearConversation,
 }; 
