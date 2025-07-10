@@ -13,6 +13,6 @@ module.exports = {
   // Voice configuration
   voice: 'Polly.Joanna', // Amazon Polly voice
   language: 'en-US',
-  speechTimeout: 'auto',
-  speechModel: 'phone_call'
+  speechTimeout: 5,              // ✅ POSITIVE INTEGER REQUIRED for phone_call model
+  speechModel: 'phone_call'      // ✅ Optimized for phone conversations
 };

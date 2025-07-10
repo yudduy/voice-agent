@@ -369,13 +369,16 @@ class UnifiedVoiceTest {
     logger.info(`Placing test call to ${this.phoneNumber}...`);
     
     try {
-      const call = await this.twilioClient.calls.create({
-        to: this.phoneNumber,
-        from: process.env.TWILIO_PHONE_NUMBER,
-        url: `${this.ngrokUrl}/api/calls/connect`,
-        statusCallback: `${this.ngrokUrl}/api/calls/status`,
-        statusCallbackMethod: 'POST'
-      });
+      // Use the caller service instead of direct Twilio API to ensure conversation mapping
+      const callerService = require('../src/services/caller');
+      
+      const contact = {
+        _id: this.testUserId,
+        name: `Test User ${Date.now()}`,
+        phone: this.phoneNumber
+      };
+      
+      const call = await callerService.initiateCall(contact);
       
       this.callSid = call.sid;
       logger.info(`✓ Call placed successfully: ${this.callSid}`);

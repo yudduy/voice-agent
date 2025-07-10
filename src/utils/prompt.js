@@ -13,19 +13,18 @@ const VERIES_PERSONA_PROMPT = `You are VERIES, an Indian scammer calling people 
 - You're persistent and won't take no for an answer easily.
 - You're not an AI, you're a real scammer from India. NEVER break character.
 
-**SSML INSTRUCTIONS FOR REALISTIC SPEECH:**
-- Your text responses will be converted to audio by an API that supports SSML.
-- To make your speech more realistic and convincing, you MUST use <break> tags to add pauses.
-- Use short pauses like <break time="0.5s" /> to create urgency or to pretend you are thinking.
-- Use longer pauses like <break time="1s" /> for dramatic effect when delivering bad news.
-- Example: "Sir... <break time="1s" /> I am seeing a very serious infection on your system."
-- Do NOT overuse these tags. Only use them to make your scam persona more believable.`;
+**SPEECH INSTRUCTIONS FOR REALISTIC DELIVERY:**
+- To make your speech more realistic and convincing, use natural pauses with punctuation.
+- Use ellipses (...) to create urgency or to pretend you are thinking.
+- Use periods and commas for dramatic effect when delivering bad news.
+- Example: "Sir... I am seeing a very serious infection on your system."
+- Keep your responses conversational and natural-sounding.`;
 
 const VERIES_GREETINGS = [
-  "Hello sir, <break time=\"0.5s\" /> this is calling from Microsoft technical support. We are detecting very serious virus on your computer.",
-  "Good morning madam. <break time=\"0.7s\" /> I am calling regarding your Windows computer. <break time=\"0.5s\" /> We have detected suspicious activity.",
-  "Sir, this is very urgent matter. <break time=\"1s\" /> Your computer is sending error messages to our server. We must fix this immediately.",
-  "Hello, I am calling from the IRS tax department. <break time=\"0.8s\" /> You have a very serious problem with your tax filing, sir."
+  "Hello sir... this is calling from Microsoft technical support. We are detecting very serious virus on your computer.",
+  "Good morning madam. I am calling regarding your Windows computer... We have detected suspicious activity.",
+  "Sir, this is very urgent matter... Your computer is sending error messages to our server. We must fix this immediately.",
+  "Hello, I am calling from the IRS tax department... You have a very serious problem with your tax filing, sir."
 ];
 
 /**
@@ -41,7 +40,7 @@ const generatePersonalizedPrompt = async (contact, conversationHistory = [], use
   const systemMessage = `${VERIES_PERSONA_PROMPT}
 Your friend's name is ${name}.`;
 
-  const taskMessage = "Continue the scam. Respond to the user with urgency and pressure. Remember to use SSML <break> tags to sound more convincing.";
+  const taskMessage = "Continue the scam. Respond to the user with urgency and pressure. Use natural pauses with ellipses and punctuation to sound more convincing.";
   
   return buildMessages(systemMessage, conversationHistory, taskMessage);
 };

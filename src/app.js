@@ -4,7 +4,7 @@
 require('dotenv').config();
 const express = require('express');
 const scheduler = require('./services/scheduler');
-const unifiedWebhooks = require('./webhooks/unifiedTwilioWebhooks');
+const unifiedTwilioWebhooks = require('./webhooks/unifiedTwilioWebhooks');
 const audioWebhooks = require('./webhooks/audioWebhooks');
 const smsWebhook = require('./webhooks/smsWebhook');
 const { processOnboardingQueue } = require('./services/smsHandler');
@@ -50,7 +50,7 @@ const apiLimiter = rateLimit({
 app.use('/api/', apiLimiter);
 
 // Register webhook routes
-app.use('/api/calls', unifiedWebhooks);
+app.use('/api/calls', unifiedTwilioWebhooks);
 app.use('/api/calls/audio', audioWebhooks);
 app.use('/webhooks', smsWebhook);
 

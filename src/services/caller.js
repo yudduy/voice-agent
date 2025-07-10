@@ -5,6 +5,7 @@ const twilio = require('twilio');
 const telephonyConfig = require('../config/telephony');
 const logger = require('../utils/logger');
 const historyRepository = require('../repositories/historyRepository');
+const conversationService = require('./conversation');
 const { formatPhoneForCalling } = require('../utils/phoneFormatter');
 
 // Initialize Twilio client
@@ -36,17 +37,21 @@ const initiateCall = async (contact) => {
     logger.info(`Initiating call to ${contactName}`, { userId, formattedPhone: phoneNumberToCall });
     
     const call = await client.calls.create({
-      url: `${telephonyConfig.webhookBaseUrl}/api/calls/connect`, 
+      url: `${telephonyConfig.webhookBaseUrl}/api/calls/connect#ct=10000&rt=15000&rc=3&rp=ct,rt`, 
       to: phoneNumberToCall,
       from: telephonyConfig.phoneNumber,
-      statusCallback: `${telephonyConfig.webhookBaseUrl}/api/calls/status`,
-      statusCallbackEvent: ['initiated', 'ringing', 'answered', 'completed', 'busy', 'failed', 'no-answer'],
-      statusCallbackMethod: 'POST',
-      record: true,
-      recordingStatusCallback: `${telephonyConfig.webhookBaseUrl}/api/calls/recording`
+      statusCallback: `${telephonyConfig.webhookBaseUrl}/api/calls/status#ct=5000&rt=10000&rc=2&rp=ct,rt`,
+      statusCallbackEvent: ['initiated', 'ringing', 'answered', 'completed'],
+      statusCallbackMethod: 'POST'
+      // NOTE: record and recordingStatusCallback are NOT valid attributes for call creation
+      // These should be handled by TwiML verbs (Record or Gather) in the webhooks
     });
     
     logger.info(`[initiateCall] Twilio call initiated successfully`, { callSid: call.sid });
+    
+    // Initialize conversation mapping for webhook to find
+    await conversationService.initializeConversation(call.sid, contact);
+    logger.info(`[initiateCall] Conversation mapping created`, { callSid: call.sid, userId });
     
     await historyRepository.logCall({
       user_id: userId,

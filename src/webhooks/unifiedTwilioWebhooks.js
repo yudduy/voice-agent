@@ -12,9 +12,104 @@ const speechToText = require('../services/speechToText');
 const textToSpeech = require('../services/textToSpeech');
 const aiConfig = require('../config/ai');
 const telephonyConfig = require('../config/telephony');
+const { ensureTwiMLSafe } = require('../utils/textSanitizer');
 
 // Active handlers storage
 const activeHandlers = new Map();
+
+/**
+ * Create a clean Gather options object with no recording attributes
+ * @param {string} action - The action URL
+ * @returns {object} - Clean gather options
+ */
+const createCleanGatherOptions = (action = '/api/calls/respond') => {
+  // Create base options with ONLY valid Gather attributes
+  const options = {
+    input: 'speech',  // Changed from array to string for consistency
+    speechTimeout: telephonyConfig.speechTimeout || 5,
+    speechModel: telephonyConfig.speechModel || 'phone_call',
+    enhanced: true,
+    language: telephonyConfig.language || 'en-US',
+    action: action,
+    method: 'POST',
+    actionOnEmptyResult: true,
+    timeout: 30
+  };
+  
+  // Log that we're creating clean options
+  logger.debug('[TwiML] Creating clean Gather options (no recording attributes)', {
+    options: JSON.stringify(options)
+  });
+  
+  // Return a frozen object to prevent accidental modification
+  return Object.freeze(options);
+};
+
+/**
+ * Create a clean Record options object
+ * @param {string} action - The action URL
+ * @returns {object} - Clean record options
+ */
+const createCleanRecordOptions = (action = '/api/calls/process-recording') => {
+  return {
+    action: action,
+    method: 'POST',
+    maxLength: 30,
+    timeout: 5,
+    playBeep: false
+    // Note: recordingStatusCallback can be added here if needed for Record verb
+  };
+};
+
+/**
+ * Validate TwiML response before sending
+ * @param {string} twimlString - TwiML XML string
+ * @returns {boolean} - True if valid
+ */
+const validateTwiML = (twimlString) => {
+  // Check for invalid Gather attributes specifically - THIS CAUSES ERROR 12200
+  const gatherMatches = twimlString.match(/<Gather[^>]*>/g);
+  if (gatherMatches) {
+    for (const gather of gatherMatches) {
+      const invalidAttributes = [
+        'record=', 'recordingStatus', 'transcribe=', 
+        'recordingCallback', 'transcribeCallback'
+      ];
+      
+      for (const attr of invalidAttributes) {
+        if (gather.includes(attr)) {
+          logger.error('CRITICAL: Invalid attribute in Gather verb - This causes Error 12200', {
+            invalidAttribute: attr,
+            gatherTag: gather,
+            fullTwiML: twimlString,
+            error: 'TwiML XML Validation Error 12200'
+          });
+          return false;
+        }
+      }
+    }
+  }
+  
+  // Check for other invalid patterns
+  const invalidPatterns = [
+    /<break/i, /<prosody/i, /<voice/i, /<speak/i,
+    /<say-as/i, /<emphasis/i, /<sub/i, /<phoneme/i,
+    /\[.*?\]/
+  ];
+  
+  for (const pattern of invalidPatterns) {
+    if (pattern.test(twimlString)) {
+      logger.error('Invalid TwiML pattern detected', {
+        pattern: pattern.toString(),
+        twimlSnippet: twimlString.substring(0, 200)
+      });
+      return false;
+    }
+  }
+  
+  logger.debug('[TwiML] Validation passed - no invalid attributes detected');
+  return true;
+};
 
 /**
  * Feature flags for different processing modes
@@ -115,7 +210,9 @@ const generateAudioResponse = async (response, content, options = {}) => {
     // Single content item
     await addSingleAudioItem(response, content, options);
   }
-};\n\n/**\n * Sophisticated audio response generation with interruption handling\n */\nconst generateSophisticatedAudioResponse = async (response, content, callSid, options = {}) => {\n  if (!content) return;\n\n  logger.info('[Sophisticated Audio] Generating response with interruption handling', {\n    callSid,\n    contentType: typeof content,\n    isArray: Array.isArray(content)\n  });\n\n  // Split content into sentences for better interruption handling\n  const sentences = splitIntoSentences(content);\n  \n  // Generate each sentence as a separate audio item\n  for (let i = 0; i < sentences.length; i++) {\n    const sentence = sentences[i].trim();\n    if (!sentence) continue;\n\n    logger.debug('[Sophisticated Audio] Processing sentence', {\n      callSid,\n      sentenceIndex: i,\n      totalSentences: sentences.length,\n      sentence: sentence.substring(0, 50) + '...'\n    });\n\n    // Generate TTS for this sentence\n    const audioUrl = await textToSpeech.generateAudio(sentence);\n    if (audioUrl) {\n      const fullUrl = `${process.env.WEBHOOK_BASE_URL}${audioUrl}`;\n      response.play(fullUrl);\n    } else {\n      // Fallback to Twilio TTS\n      response.say({\n        voice: telephonyConfig.voice,\n        language: telephonyConfig.language\n      }, sentence);\n    }\n\n    // Add brief pause between sentences for natural flow\n    if (i < sentences.length - 1) {\n      response.pause({ length: 0.3 });\n    }\n  }\n\n  logger.info('[Sophisticated Audio] Response generation completed', {\n    callSid,\n    sentencesProcessed: sentences.length\n  });\n};\n\n/**\n * Split text into sentences for better interruption handling\n */\nconst splitIntoSentences = (text) => {\n  if (typeof text !== 'string') {\n    return [String(text)];\n  }\n\n  // Split on sentence boundaries while preserving punctuation\n  const sentences = text.split(/([.!?]+)/).reduce((acc, part, index, array) => {\n    if (index % 2 === 0) {\n      // Text part\n      const nextPart = array[index + 1];\n      if (nextPart) {\n        acc.push(part + nextPart);\n      } else {\n        acc.push(part);\n      }\n    }\n    return acc;\n  }, []);\n\n  return sentences.filter(s => s.trim().length > 0);\n};\n\n/**
+};
+
+/**
  * Add single audio item to response
  */
 const addSingleAudioItem = async (response, item, options = {}) => {
@@ -229,29 +326,28 @@ router.post('/connect', async (req, res) => {
       logger.info('[Unified /connect] Using Groq STT with recording', { callSid });
       
       // Use Record verb for Groq STT
-      response.record({
-        action: '/api/calls/process-recording',
-        method: 'POST',
-        maxLength: 30,
-        timeout: 5,
-        playBeep: false,
-        recordingStatusCallback: '/api/calls/recording-status',
-        recordingStatusCallbackMethod: 'POST'
+      const recordOptions = createCleanRecordOptions();
+      
+      // Log what we're about to create
+      logger.debug('[Unified /connect] Creating Record verb with options', { 
+        callSid, 
+        recordOptions 
       });
+      
+      response.record(recordOptions);
     } else {
       logger.info('[Unified /connect] Using Twilio STT with Gather', { callSid });
       
       // Use Gather for Twilio STT
-      response.gather({
-        input: ['speech'],
-        speechTimeout: 'auto',
-        speechModel: 'default',
-        language: 'en-US',
-        action: '/api/calls/respond',
-        method: 'POST',
-        actionOnEmptyResult: true,
-        timeout: 30
+      const gatherOptions = createCleanGatherOptions();
+      
+      // Log what we're about to create
+      logger.debug('[Unified /connect] Creating Gather verb with options', { 
+        callSid, 
+        gatherOptions 
       });
+      
+      response.gather(gatherOptions);
     }
 
     // Add a fallback if no input is received
@@ -270,7 +366,25 @@ router.post('/connect', async (req, res) => {
       usingGroqSTT: aiConfig.speechPreferences.sttPreference === 'groq' && aiConfig.speechPreferences.enableRecording
     });
 
-    res.type('text/xml').send(response.toString());
+    const twimlString = response.toString();
+    
+    // Log TwiML for debugging
+    logger.debug('[Unified] Generated TwiML', {
+      callSid,
+      endpoint: req.path,
+      twimlLength: twimlString.length,
+      hasGather: twimlString.includes('<Gather'),
+      hasRecord: twimlString.includes('<Record')
+    });
+    
+    if (!validateTwiML(twimlString)) {
+      logger.error('[Unified] TwiML validation failed - This will cause Error 12200', { 
+        callSid,
+        endpoint: req.path,
+        twiml: twimlString 
+      });
+    }
+    res.type('text/xml').send(twimlString);
 
   } catch (error) {
     logger.error('[Unified Connect Webhook Error]', {
@@ -354,15 +468,7 @@ router.post('/process-recording', async (req, res) => {
       }
 
       // Record again
-      response.record({
-        action: '/api/calls/process-recording',
-        method: 'POST',
-        maxLength: 30,
-        timeout: 5,
-        playBeep: false,
-        recordingStatusCallback: '/api/calls/recording-status',
-        recordingStatusCallbackMethod: 'POST'
-      });
+      response.record(createCleanRecordOptions());
 
       return res.type('text/xml').send(response.toString());
     }
@@ -377,10 +483,10 @@ router.post('/process-recording', async (req, res) => {
       result = await handler.processInput(processedInput);
     }
 
-    // Generate sophisticated audio response with interruption handling
+    // Generate audio response
     const audioContent = result.audioUrls || result.fullResponse;
     if (audioContent) {
-      await generateSophisticatedAudioResponse(response, audioContent, callSid);
+      await generateAudioResponse(response, audioContent);
     }
 
     // Handle conversation end
@@ -395,15 +501,7 @@ router.post('/process-recording', async (req, res) => {
       activeHandlers.delete(callSid);
     } else {
       // Continue conversation with new recording
-      response.record({
-        action: '/api/calls/process-recording',
-        method: 'POST',
-        maxLength: 30,
-        timeout: 5,
-        playBeep: false,
-        recordingStatusCallback: '/api/calls/recording-status',
-        recordingStatusCallbackMethod: 'POST'
-      });
+      response.record(createCleanRecordOptions());
       
       // Add timeout fallback
       response.say({
@@ -426,7 +524,25 @@ router.post('/process-recording', async (req, res) => {
       metrics: result.metrics || {}
     });
 
-    res.type('text/xml').send(response.toString());
+    const twimlString = response.toString();
+    
+    // Log TwiML for debugging
+    logger.debug('[Unified] Generated TwiML', {
+      callSid,
+      endpoint: req.path,
+      twimlLength: twimlString.length,
+      hasGather: twimlString.includes('<Gather'),
+      hasRecord: twimlString.includes('<Record')
+    });
+    
+    if (!validateTwiML(twimlString)) {
+      logger.error('[Unified] TwiML validation failed - This will cause Error 12200', { 
+        callSid,
+        endpoint: req.path,
+        twiml: twimlString 
+      });
+    }
+    res.type('text/xml').send(twimlString);
 
   } catch (error) {
     logger.error('[Unified Process Recording Webhook Error]', {
@@ -445,10 +561,12 @@ router.post('/process-recording', async (req, res) => {
 
     // Emergency fallback
     const fallbackResponse = new VoiceResponse();
-    fallbackResponse.say(
+    const emergencyText = ensureTwiMLSafe(
       aiConfig.advancedOptimizations?.emergencyResponseText || 
-      "I'm sorry, an internal error occurred. Please try again."
+      "I'm sorry, an internal error occurred. Please try again.",
+      logger
     );
+    fallbackResponse.say(emergencyText);
     fallbackResponse.hangup();
 
     res.type('text/xml').send(fallbackResponse.toString());
@@ -521,13 +639,7 @@ router.post('/respond', async (req, res) => {
       }
 
       // Return minimal response for partial input
-      response.gather({
-        input: ['speech'],
-        speechTimeout: 'auto',
-        action: '/api/calls/respond',
-        method: 'POST',
-        actionOnEmptyResult: true
-      });
+      response.gather(createCleanGatherOptions());
 
       return res.type('text/xml').send(response.toString());
     }
@@ -558,19 +670,9 @@ router.post('/respond', async (req, res) => {
         sttLatency 
       });
       
-      const gatherOptions = {
-        input: ['speech'],
-        speechTimeout: 'auto',
-        action: '/api/calls/respond',
-        method: 'POST',
-        actionOnEmptyResult: true,
-        timeout: 30
-      };
-
-      // Note: Recording for Groq STT needs to be handled differently
-
-      const gather = response.gather(gatherOptions);
-      await generateSophisticatedAudioResponse(gather, "I'm sorry, I didn't catch that. Could you please repeat?", callSid);
+      // Use clean gather options
+      response.gather(createCleanGatherOptions());
+      await generateAudioResponse(response, "I'm sorry, I didn't catch that. Could you please repeat?");
 
       // Fallback if still no input
       response.say({
@@ -595,10 +697,10 @@ router.post('/respond', async (req, res) => {
       result = await handler.processInput(processedInput);
     }
 
-    // Generate sophisticated audio response with interruption handling
+    // Generate audio response
     const audioContent = result.audioUrls || result.fullResponse;
     if (audioContent) {
-      await generateSophisticatedAudioResponse(response, audioContent, callSid);
+      await generateAudioResponse(response, audioContent);
     }
 
     // Handle conversation end
@@ -613,19 +715,8 @@ router.post('/respond', async (req, res) => {
       activeHandlers.delete(callSid);
     } else {
       // Continue conversation with proper timing
-      const gatherOptions = {
-        input: ['speech'],
-        speechTimeout: 'auto',
-        action: '/api/calls/respond',
-        method: 'POST',
-        actionOnEmptyResult: true,
-        timeout: 30
-      };
-
-      // Note: Recording for Groq STT needs to be handled differently
-
       // Add gather for next user input - but don't nest it inside the response audio
-      response.gather(gatherOptions);
+      response.gather(createCleanGatherOptions());
       
       // Add fallback if no response
       response.say({
@@ -648,7 +739,25 @@ router.post('/respond', async (req, res) => {
       metrics: result.metrics || {}
     });
 
-    res.type('text/xml').send(response.toString());
+    const twimlString = response.toString();
+    
+    // Log TwiML for debugging
+    logger.debug('[Unified] Generated TwiML', {
+      callSid,
+      endpoint: req.path,
+      twimlLength: twimlString.length,
+      hasGather: twimlString.includes('<Gather'),
+      hasRecord: twimlString.includes('<Record')
+    });
+    
+    if (!validateTwiML(twimlString)) {
+      logger.error('[Unified] TwiML validation failed - This will cause Error 12200', { 
+        callSid,
+        endpoint: req.path,
+        twiml: twimlString 
+      });
+    }
+    res.type('text/xml').send(twimlString);
 
   } catch (error) {
     logger.error('[Unified Respond Webhook Error]', {
@@ -667,10 +776,12 @@ router.post('/respond', async (req, res) => {
 
     // Emergency fallback
     const fallbackResponse = new VoiceResponse();
-    fallbackResponse.say(
+    const emergencyText = ensureTwiMLSafe(
       aiConfig.advancedOptimizations?.emergencyResponseText || 
-      "I'm sorry, an internal error occurred. Please try again."
+      "I'm sorry, an internal error occurred. Please try again.",
+      logger
     );
+    fallbackResponse.say(emergencyText);
     fallbackResponse.hangup();
 
     res.type('text/xml').send(fallbackResponse.toString());

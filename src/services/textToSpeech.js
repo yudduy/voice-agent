@@ -7,6 +7,7 @@
 const logger = require('../utils/logger');
 const telephonyConfig = require('../config/telephony');
 const aiConfig = require('../config/ai');
+const { performance: performanceConfig } = require('../config');
 const axios = require('axios');
 const fs = require('fs');
 const fsp = require('fs').promises;
@@ -68,6 +69,7 @@ const sendChunkToHyperbolic = async (textChunk, requestOptionsBase, cacheKey) =>
     const requestOptions = {
       ...requestOptionsBase,
       data: { ...requestOptionsBase.data, text: currentText },
+      timeout: performanceConfig.timeouts.defaultApi,
     };
     
     try {
@@ -206,11 +208,26 @@ const generateHyperbolicAudio = async (text, options = {}) => {
  * @returns {string} - Formatted text
  */
 const formatTextForSpeech = (text) => {
+  // CRITICAL: Remove SSML tags that cause XML validation errors in Twilio
+  // These tags break TwiML because <Say> expects plain text, not SSML
+  let formattedText = text
+    // Remove SSML break tags and replace with natural pauses
+    .replace(/<break\s+time=["']([^"']+)["']\s*\/?>?/gi, (match, duration) => {
+      // Convert break tags to ellipses for natural pauses
+      const time = parseFloat(duration);
+      if (time >= 1.0) return '... '; // Long pause (1s+)
+      if (time >= 0.5) return '.. '; // Medium pause (0.5s+)
+      return '. '; // Short pause (<0.5s)
+    })
+    // Remove any other SSML tags that might cause issues
+    .replace(/<\/?[^>]+>/g, ' ')
+    // Clean up multiple spaces created by tag removal
+    .replace(/\s{2,}/g, ' ')
+    .trim();
+  
   // Format text to sound more natural when spoken
   // Replace acronyms, format numbers, etc.
-  
-  // Example: replace "AI" with "A I" for better pronunciation
-  let formattedText = text
+  formattedText = formattedText
     .replace(/\bAI\b/g, 'A I')
     .replace(/\bUI\b/g, 'U I')
     .replace(/\bAPI\b/g, 'A P I');
@@ -220,6 +237,12 @@ const formatTextForSpeech = (text) => {
     /(\d{3})[- ]?(\d{3})[- ]?(\d{4})/g, 
     '$1 $2 $3'
   );
+  
+  logger.debug('Text formatted for speech', { 
+    original: text.slice(0, 100), 
+    formatted: formattedText.slice(0, 100),
+    hadSSML: /<[^>]+>/.test(text)
+  });
   
   return formattedText;
 };
@@ -315,6 +338,7 @@ const generateElevenLabsAudio = async (text, options = {}) => {
       ...options,
     },
     responseType: 'stream',
+    timeout: performanceConfig.timeouts.elevenLabsTTS,
   };
 
   const filename = `${cacheKey}.mp3`;
