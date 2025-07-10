@@ -115,9 +115,7 @@ const generateAudioResponse = async (response, content, options = {}) => {
     // Single content item
     await addSingleAudioItem(response, content, options);
   }
-};
-
-/**
+};\n\n/**\n * Sophisticated audio response generation with interruption handling\n */\nconst generateSophisticatedAudioResponse = async (response, content, callSid, options = {}) => {\n  if (!content) return;\n\n  logger.info('[Sophisticated Audio] Generating response with interruption handling', {\n    callSid,\n    contentType: typeof content,\n    isArray: Array.isArray(content)\n  });\n\n  // Split content into sentences for better interruption handling\n  const sentences = splitIntoSentences(content);\n  \n  // Generate each sentence as a separate audio item\n  for (let i = 0; i < sentences.length; i++) {\n    const sentence = sentences[i].trim();\n    if (!sentence) continue;\n\n    logger.debug('[Sophisticated Audio] Processing sentence', {\n      callSid,\n      sentenceIndex: i,\n      totalSentences: sentences.length,\n      sentence: sentence.substring(0, 50) + '...'\n    });\n\n    // Generate TTS for this sentence\n    const audioUrl = await textToSpeech.generateAudio(sentence);\n    if (audioUrl) {\n      const fullUrl = `${process.env.WEBHOOK_BASE_URL}${audioUrl}`;\n      response.play(fullUrl);\n    } else {\n      // Fallback to Twilio TTS\n      response.say({\n        voice: telephonyConfig.voice,\n        language: telephonyConfig.language\n      }, sentence);\n    }\n\n    // Add brief pause between sentences for natural flow\n    if (i < sentences.length - 1) {\n      response.pause({ length: 0.3 });\n    }\n  }\n\n  logger.info('[Sophisticated Audio] Response generation completed', {\n    callSid,\n    sentencesProcessed: sentences.length\n  });\n};\n\n/**\n * Split text into sentences for better interruption handling\n */\nconst splitIntoSentences = (text) => {\n  if (typeof text !== 'string') {\n    return [String(text)];\n  }\n\n  // Split on sentence boundaries while preserving punctuation\n  const sentences = text.split(/([.!?]+)/).reduce((acc, part, index, array) => {\n    if (index % 2 === 0) {\n      // Text part\n      const nextPart = array[index + 1];\n      if (nextPart) {\n        acc.push(part + nextPart);\n      } else {\n        acc.push(part);\n      }\n    }\n    return acc;\n  }, []);\n\n  return sentences.filter(s => s.trim().length > 0);\n};\n\n/**
  * Add single audio item to response
  */
 const addSingleAudioItem = async (response, item, options = {}) => {
@@ -212,40 +210,48 @@ router.post('/connect', async (req, res) => {
       `Hello ${user.name}! How can I help you today?` : 
       "Hello! How can I help you today?";
 
-    const gatherOptions = {
-      input: ['speech'],
-      speechTimeout: 'auto',
-      speechModel: 'default',
-      language: 'en-US',
-      action: '/api/calls/respond',
-      method: 'POST',
-      actionOnEmptyResult: true,
-      timeout: 30  // Give user 30 seconds to respond
-    };
-
-    // Note: Recording for Groq STT needs to be handled differently
-    // The <Gather> verb doesn't support recording attributes
-    if (aiConfig.speechPreferences.enableRecording && 
-        aiConfig.speechPreferences.sttPreference === 'groq') {
-      logger.info('[Unified /connect] Groq STT enabled (recording will be handled separately)', { callSid });
-    } else {
-      logger.info('[Unified /connect] Using Twilio STT only', { callSid });
-    }
-
-    // Use Gather with nested content to ensure proper flow
-    const gather = response.gather(gatherOptions);
-    
-    // Add the greeting inside the gather to ensure proper sequencing
+    // Play greeting first
     const audioUrl = await textToSpeech.generateAudio(greetingText);
     if (audioUrl) {
       const fullUrl = `${process.env.WEBHOOK_BASE_URL}${audioUrl}`;
-      gather.play(fullUrl);
+      response.play(fullUrl);
     } else {
       // Fallback to Twilio TTS
-      gather.say({
+      response.say({
         voice: telephonyConfig.voice,
         language: telephonyConfig.language
       }, greetingText);
+    }
+
+    // Choose recording method based on STT preference
+    if (aiConfig.speechPreferences.enableRecording && 
+        aiConfig.speechPreferences.sttPreference === 'groq') {
+      logger.info('[Unified /connect] Using Groq STT with recording', { callSid });
+      
+      // Use Record verb for Groq STT
+      response.record({
+        action: '/api/calls/process-recording',
+        method: 'POST',
+        maxLength: 30,
+        timeout: 5,
+        playBeep: false,
+        recordingStatusCallback: '/api/calls/recording-status',
+        recordingStatusCallbackMethod: 'POST'
+      });
+    } else {
+      logger.info('[Unified /connect] Using Twilio STT with Gather', { callSid });
+      
+      // Use Gather for Twilio STT
+      response.gather({
+        input: ['speech'],
+        speechTimeout: 'auto',
+        speechModel: 'default',
+        language: 'en-US',
+        action: '/api/calls/respond',
+        method: 'POST',
+        actionOnEmptyResult: true,
+        timeout: 30
+      });
     }
 
     // Add a fallback if no input is received
@@ -254,14 +260,14 @@ router.post('/connect', async (req, res) => {
       language: telephonyConfig.language
     }, "I didn't hear anything. Please try speaking now.");
     
-    // Redirect back to gather more input
+    // Redirect back to connect
     response.redirect('/api/calls/connect');
 
     logger.info('[Unified /connect] Setup complete', { 
       callSid, 
       userId: user.id, 
       usedElevenLabs: !!audioUrl,
-      enabledGroqSTT: gatherOptions.record 
+      usingGroqSTT: aiConfig.speechPreferences.sttPreference === 'groq' && aiConfig.speechPreferences.enableRecording
     });
 
     res.type('text/xml').send(response.toString());
@@ -283,8 +289,193 @@ router.post('/connect', async (req, res) => {
 });
 
 /**
- * Main /respond endpoint - handles all processing modes
+ * Process recording endpoint - handles Groq STT from recordings
  */
+router.post('/process-recording', async (req, res) => {
+  const startTs = Date.now();
+  const {
+    CallSid: callSid,
+    RecordingUrl: recordingUrl,
+    RecordingStatus: recordingStatus
+  } = req.body;
+
+  const response = new VoiceResponse();
+  const processingMode = getProcessingMode();
+
+  try {
+    logger.info('[Unified /process-recording] Processing Groq STT recording', {
+      callSid,
+      recordingUrl,
+      recordingStatus,
+      processingMode
+    });
+
+    // Get or create conversation handler
+    let handler = activeHandlers.get(callSid);
+    if (!handler) {
+      const userId = await conversationService.getUserIdByCallSid(callSid);
+      if (!userId) {
+        logger.error('[Unified /process-recording] No user ID mapping found', { callSid });
+        response.say("I apologize, there was an error retrieving our conversation state.");
+        response.hangup();
+        return res.type('text/xml').send(response.toString());
+      }
+
+      handler = await createConversationHandler(callSid, userId, processingMode);
+      activeHandlers.set(callSid, handler);
+    }
+
+    // Process recording with Groq STT
+    const { processedInput, sttLatency } = await processSTT(
+      null, // No userInput from Twilio
+      recordingUrl,
+      1.0, // High confidence for recordings
+      callSid
+    );
+
+    // Handle no valid input
+    if (!processedInput) {
+      logger.warn('[Unified /process-recording] No valid speech detected from recording', { 
+        callSid, 
+        recordingUrl,
+        sttLatency 
+      });
+      
+      // Start new recording session
+      const audioUrl = await textToSpeech.generateAudio("I'm sorry, I didn't catch that. Could you please repeat?");
+      if (audioUrl) {
+        const fullUrl = `${process.env.WEBHOOK_BASE_URL}${audioUrl}`;
+        response.play(fullUrl);
+      } else {
+        response.say({
+          voice: telephonyConfig.voice,
+          language: telephonyConfig.language
+        }, "I'm sorry, I didn't catch that. Could you please repeat?");
+      }
+
+      // Record again
+      response.record({
+        action: '/api/calls/process-recording',
+        method: 'POST',
+        maxLength: 30,
+        timeout: 5,
+        playBeep: false,
+        recordingStatusCallback: '/api/calls/recording-status',
+        recordingStatusCallbackMethod: 'POST'
+      });
+
+      return res.type('text/xml').send(response.toString());
+    }
+
+    // Process input based on mode
+    let result;
+    if (processingMode === 'ADVANCED' && handler.processCompleteInput) {
+      result = await handler.processCompleteInput(processedInput, 1.0);
+    } else if (processingMode === 'STREAMING' && handler.processStreamingResponse) {
+      result = await handler.processStreamingResponse(processedInput);
+    } else {
+      result = await handler.processInput(processedInput);
+    }
+
+    // Generate sophisticated audio response with interruption handling
+    const audioContent = result.audioUrls || result.fullResponse;
+    if (audioContent) {
+      await generateSophisticatedAudioResponse(response, audioContent, callSid);
+    }
+
+    // Handle conversation end
+    if (result.shouldHangup) {
+      logger.info('[Unified /process-recording] Conversation ended', { callSid });
+      response.hangup();
+      
+      // Cleanup handler
+      if (handler.cleanup) {
+        handler.cleanup();
+      }
+      activeHandlers.delete(callSid);
+    } else {
+      // Continue conversation with new recording
+      response.record({
+        action: '/api/calls/process-recording',
+        method: 'POST',
+        maxLength: 30,
+        timeout: 5,
+        playBeep: false,
+        recordingStatusCallback: '/api/calls/recording-status',
+        recordingStatusCallbackMethod: 'POST'
+      });
+      
+      // Add timeout fallback
+      response.say({
+        voice: telephonyConfig.voice,
+        language: telephonyConfig.language
+      }, "I'm still here. Please let me know how I can help you.");
+      
+      response.hangup();
+    }
+
+    // Log performance metrics
+    const elapsedMs = Date.now() - startTs;
+    logger.info('[Unified /process-recording] Response completed', {
+      callSid,
+      processingMode,
+      elapsedMs,
+      sttLatency,
+      speculative: result.speculative || false,
+      corrected: result.corrected || false,
+      metrics: result.metrics || {}
+    });
+
+    res.type('text/xml').send(response.toString());
+
+  } catch (error) {
+    logger.error('[Unified Process Recording Webhook Error]', {
+      callSid,
+      processingMode,
+      error: error.message,
+      stack: error.stack
+    });
+
+    // Cleanup handler on error
+    const handler = activeHandlers.get(callSid);
+    if (handler && handler.cleanup) {
+      handler.cleanup();
+    }
+    activeHandlers.delete(callSid);
+
+    // Emergency fallback
+    const fallbackResponse = new VoiceResponse();
+    fallbackResponse.say(
+      aiConfig.advancedOptimizations?.emergencyResponseText || 
+      "I'm sorry, an internal error occurred. Please try again."
+    );
+    fallbackResponse.hangup();
+
+    res.type('text/xml').send(fallbackResponse.toString());
+  }
+});
+
+/**
+ * Recording status webhook
+ */
+router.post('/recording-status', async (req, res) => {
+  const {
+    CallSid: callSid,
+    RecordingStatus: status,
+    RecordingUrl: recordingUrl
+  } = req.body;
+
+  logger.info('[Unified Recording Status]', {
+    callSid,
+    status,
+    recordingUrl
+  });
+
+  res.sendStatus(200);
+});
+
+/**
+ * Main /respond endpoint - handles all processing modes\n */
 router.post('/respond', async (req, res) => {
   const startTs = Date.now();
   const {
@@ -379,7 +570,7 @@ router.post('/respond', async (req, res) => {
       // Note: Recording for Groq STT needs to be handled differently
 
       const gather = response.gather(gatherOptions);
-      await generateAudioResponse(gather, "I'm sorry, I didn't catch that. Could you please repeat?");
+      await generateSophisticatedAudioResponse(gather, "I'm sorry, I didn't catch that. Could you please repeat?", callSid);
 
       // Fallback if still no input
       response.say({
@@ -404,10 +595,10 @@ router.post('/respond', async (req, res) => {
       result = await handler.processInput(processedInput);
     }
 
-    // Generate audio response
+    // Generate sophisticated audio response with interruption handling
     const audioContent = result.audioUrls || result.fullResponse;
     if (audioContent) {
-      await generateAudioResponse(response, audioContent);
+      await generateSophisticatedAudioResponse(response, audioContent, callSid);
     }
 
     // Handle conversation end
