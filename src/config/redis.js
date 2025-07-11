@@ -41,9 +41,9 @@ if (process.env.NODE_ENV !== 'test') {
   warmUpConnection();
 }
 
-// Export both redis client and connection status
-module.exports = redis;
-module.exports.isConnected = () => isConnected;
-module.exports.warmUpConnection = warmUpConnection;
-
-module.exports = redis; 
+// Export redis client and utility functions
+module.exports = {
+  ...redis,
+  isConnected: () => isConnected,
+  warmUpConnection: warmUpConnection
+}; 

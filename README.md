@@ -1,15 +1,12 @@
-# VERIES Caller (Duy Looking for Zoey! 📞)
+# Caller AI 📞
 
-Voice-first AI agent with a specific family mission:
+A voice-first AI agent designed for outbound calling campaigns.
 
-* **Calls to find Zoey directly** - Duy (younger brother) trying to reach his sister Zoey for homework help
-* **Smart call logic**: Asks "Hi this is Duy, is this Zoey?" - if YES: gets demanding about needing help, if NO: politely hangs up
+* **Dynamic Personas**: Easily configurable personas for different campaigns.
+* **Smart Call Logic**: Handles various call scenarios and user responses.
 * **Voice Pipeline**: **Groq Whisper STT → OpenAI GPT-4o-mini → ElevenLabs TTS**
-* **Personality**: Natural, slightly annoying younger brother who needs help with homework and projects
 * **Storage**: Long-term memory in **Supabase Postgres**, short-term context in **Upstash Redis**
 * **Monitoring**: Comprehensive call/transcript logging
-
-**🚀 NEW: Duy/Zoey sibling dynamic with smart hangup logic (150 token conversational responses)**
 
 ---
 
@@ -18,7 +15,7 @@ Voice-first AI agent with a specific family mission:
 | Component | Technology | Purpose |
 |-----------|------------|---------|
 | **Speech-to-Text** | Groq Whisper v3 (primary) + Twilio STT (fallback) | High-accuracy transcription with recording |
-| **Conversation AI** | OpenAI GPT-4o-mini (150 tokens) | Duy persona - younger brother needing homework help |
+| **Conversation AI** | OpenAI GPT-4o-mini (150 tokens) | Dynamic and context-aware persona handling |
 | **Text-to-Speech** | ElevenLabs Flash v2.5 (primary) + Hyperbolic (fallback) + Twilio (final) | Premium voice synthesis optimized for speed |
 | **Telephony** | Twilio Programmable Voice + SMS | Call handling and webhooks |
 | **Database** | Supabase Postgres | User profiles, call history, preferences |

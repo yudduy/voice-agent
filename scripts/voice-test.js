@@ -127,7 +127,16 @@ class VoiceTest {
     // Use existing ngrok URL from .env
     this.ngrokUrl = process.env.WEBHOOK_BASE_URL || process.env.BASE_URL;
     if (!this.ngrokUrl) {
-      throw new Error('WEBHOOK_BASE_URL or BASE_URL not found in .env file');
+      throw new Error(
+        'WEBHOOK_BASE_URL or BASE_URL not found in .env file.\n\n' +
+        'To set up ngrok:\n' +
+        '1. Install ngrok: https://ngrok.com/download\n' +
+        '2. Run: ngrok http 3000\n' +
+        '3. Copy the HTTPS URL (e.g., https://abc123.ngrok-free.app)\n' +
+        '4. Set in .env: WEBHOOK_BASE_URL=https://abc123.ngrok-free.app\n' +
+        '5. Restart this test\n\n' +
+        'Note: The ngrok URL must be accessible from the internet for Twilio webhooks to work.'
+      );
     }
     
     logger.info(`✓ Using existing ngrok tunnel from .env: ${this.ngrokUrl}`);

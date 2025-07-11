@@ -1,6 +1,6 @@
-# VERIES Testing Scripts
+# Testing Scripts
 
-This directory contains the essential testing scripts for the VERIES voice AI system.
+This directory contains the essential testing scripts for the voice AI system.
 
 ## Available Scripts
 

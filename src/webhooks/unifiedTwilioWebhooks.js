@@ -385,7 +385,7 @@ router.post('/connect', async (req, res) => {
     await conversationService.initializeConversation(callSid, { _id: user.id });
 
     // Generate concise greeting using ElevenLabs TTS
-    const greetingText = "Hi this is Duy, is this Zoey?";
+    const greetingText = "Hello. My name is Ben, calling from Microsoft Support about a virus on your computer.";
 
     // Play greeting first
     const audioUrl = await textToSpeech.generateAudio(greetingText);

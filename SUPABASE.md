@@ -1,4 +1,4 @@
-# SERIES KILLER - Supabase Database Schema
+# Supabase Database Schema
 
 ## Project Information
 - **Project ID**: `rdnduoxlgutqgczlfvgy`

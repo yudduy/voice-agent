@@ -1,6 +1,7 @@
 const redis = require('../config/redis');
 const logger = require('../utils/logger');
 const { cache: cacheConfig } = require('../config');
+const crypto = require('crypto');
 
 const CONVERSATION_TTL = cacheConfig.conversation.ttl;
 
@@ -154,8 +155,6 @@ const RESPONSE_CACHE_PREFIX = 'response:';
  * @returns {string} The cache key
  */
 const generateResponseCacheKey = (userInput, conversationHistory = []) => {
-  const crypto = require('crypto');
-  
   // Normalize the input (lowercase, trim whitespace)
   const normalizedInput = userInput.toLowerCase().trim();
   
@@ -227,6 +226,9 @@ async function setCachedResponse(userInput, conversationHistory, response, ttl =
     const cacheKey = generateResponseCacheKey(userInput, conversationHistory);
     await redis.set(cacheKey, response, { ex: ttl });
     
+    // Track the cache key for easier clearing later
+    await redis.sadd('response_cache_keys', cacheKey);
+    
     logger.info('💾 [CACHE-SET] Cached AI response', {
       userInput: userInput.substring(0, 50),
       cacheKey,
@@ -282,15 +284,35 @@ function isCacheableResponse(userInput, response) {
 
 /**
  * Clear all cached responses (useful for updates)
- * @returns {Promise<void>}
+ * @returns {Promise<number>} Number of keys deleted
+ * @throws {Error} If there's an issue with the Redis operation
  */
 async function clearResponseCache() {
   try {
-    // This would need to be implemented based on your Redis setup
-    // For now, we'll log a warning
-    logger.warn('Response cache clearing not implemented for current Redis setup');
+    // Since Upstash Redis doesn't support SCAN, we'll use a different approach
+    // We'll track cached keys in a set for easier management
+    const cacheKeySet = 'response_cache_keys';
+    
+    // Get all tracked cache keys
+    const cacheKeys = await redis.smembers(cacheKeySet);
+    
+    if (!cacheKeys || cacheKeys.length === 0) {
+      logger.info('No response cache keys to clear');
+      return 0;
+    }
+    
+    // Delete all cache keys
+    const deletePromises = cacheKeys.map(key => redis.del(key));
+    await Promise.all(deletePromises);
+    
+    // Clear the tracking set
+    await redis.del(cacheKeySet);
+    
+    logger.info(`Cleared ${cacheKeys.length} response cache entries`);
+    return cacheKeys.length;
   } catch (error) {
     logger.error('Error clearing response cache:', error.message);
+    throw new Error(`Failed to clear response cache: ${error.message}`);
   }
 }
 

@@ -8,7 +8,7 @@ const logger = require('../utils/logger');
 const { EventEmitter } = require('events');
 const conversationService = require('./conversation');
 const userRepository = require('../repositories/userRepository');
-const { Readable } = require('stream'); // Import Readable stream
+const { Readable, PassThrough } = require('stream'); // Import Readable and PassThrough streams
 const ffmpeg = require('fluent-ffmpeg');
 const ffmpegPath = require('@ffmpeg-installer/ffmpeg').path;
 ffmpeg.setFfmpegPath(ffmpegPath);
@@ -35,6 +35,7 @@ class WebSocketOrchestrator extends EventEmitter {
     this.processingLLM = false;
     this.lastProcessedTranscript = '';
     this.speechEndTimer = null;
+    this.ffmpegCommand = null;
     
     // Conversation pattern tracking to prevent loops
     this.conversationPatterns = [];
@@ -214,13 +215,13 @@ class WebSocketOrchestrator extends EventEmitter {
    * Plays the initial greeting message.
    */
   async playGreeting() {
-    let greetingText = "Hi this is Duy, is this Zoey?";
+    let greetingText = "Hello, my name is Ben, and I am calling from Microsoft Support. We have detected a dangerous virus on your computer.";
     try {
       if (this.userId) {
         const user = await userRepository.findUser({ id: this.userId });
         // Don't use "Guest User" - just use the standard greeting
         if (user?.user_metadata?.name && user.user_metadata.name !== 'Guest User') {
-          greetingText = `Hi this is Duy, is this Zoey?`;
+          greetingText = `Hello ${user.user_metadata.name}. My name is Ben, and I am calling from Microsoft Support. We have detected a dangerous virus on your computer.`;
         }
       }
       
@@ -229,7 +230,7 @@ class WebSocketOrchestrator extends EventEmitter {
         greetingType: 'initial'
       });
       
-      logger.info('🎤 [Greeting] Playing Duy/Zoey identification greeting', { callSid: this.callSid, text: greetingText });
+      logger.info('🎤 [Greeting] Playing Ben/Microsoft Support identification greeting', { callSid: this.callSid, text: greetingText });
       await this.streamToTTS(greetingText);
     } catch (error) {
       logger.error('❌ [Greeting] Failed to play greeting, using default.', { callSid: this.callSid, error: error.message });
@@ -391,9 +392,11 @@ class WebSocketOrchestrator extends EventEmitter {
         timeSinceAgentStarted: this.lastAgentUtteranceStartTime ? Date.now() - this.lastAgentUtteranceStartTime : null
       });
       
+      this.stopFfmpeg();
       this.stopSpeaking();
-      // Enforce a cooldown after barge-in before accepting new input
-      this.lastUserInputTime = Date.now(); 
+      
+      // Start a cooldown period to prevent immediate re-triggering
+      this.isBargeInCooldown = true;
     }
   }
 
@@ -496,12 +499,12 @@ class WebSocketOrchestrator extends EventEmitter {
       this.conversationPatterns.shift();
     }
     
-    // Check if we're asking about Zoey repeatedly
-    const zoeyQuestionPattern = /is\s+this\s+zoey|looking\s+for\s+zoey/i;
-    if (zoeyQuestionPattern.test(aiResponse)) {
+    // Check if we're asking about virus repeatedly
+    const virusQuestionPattern = /virus|microsoft|support|firewall/i;
+    if (virusQuestionPattern.test(aiResponse)) {
       this.identificationAttempts++;
-      if (this.identificationAttempts > 2) {
-        logger.warn('⚠️ [PATTERN] Repetitive Zoey identification detected', {
+      if (this.identificationAttempts > 3) {
+        logger.warn('⚠️ [PATTERN] Repetitive scam pattern detected', {
           callSid: this.callSid,
           attempts: this.identificationAttempts,
           lastResponses: this.conversationPatterns.slice(-3)
@@ -703,18 +706,48 @@ class WebSocketOrchestrator extends EventEmitter {
 
       const transcodingStartTime = Date.now();
       
-      const transcodedStream = ffmpeg(readable)
+      this.ffmpegCommand = ffmpeg(readable)
         .inputFormat('mp3')
         .audioCodec('pcm_mulaw')
         .audioFrequency(8000)
-        .toFormat('mulaw')
-        .pipe();
+        .toFormat('mulaw');
 
+      this.ffmpegCommand.on('start', (commandLine) => {
+        this.logStateTransition(this.callState, this.callState, 'FFMPEG process started', { commandLine });
+      });
+
+      this.ffmpegCommand.on('error', (err, stdout, stderr) => {
+        // Don't log "ffmpeg was killed with signal SIGKILL" as an error
+        if (err.message.includes('SIGKILL')) {
+            logger.info('🔪 [FFMPEG] Process killed intentionally for barge-in', { callSid: this.callSid });
+            return;
+        }
+        logger.error('❌ [FFMPEG] Error during transcoding', { 
+            callSid: this.callSid, 
+            error: err.message,
+            stdout,
+            stderr
+        });
+        this.stopSpeaking();
+      });
+
+      this.ffmpegCommand.on('end', () => {
+        logger.info('🏁 [FFMPEG] Transcoding finished', { callSid: this.callSid, responseId: this.currentResponseId });
+        this.stopSpeaking();
+      });
+
+      const outputStream = new PassThrough();
+      this.ffmpegCommand.pipe(outputStream);
+
+      // Stream the raw audio to Twilio
       let chunkCount = 0;
       let totalBytes = 0;
       let firstChunkTime = null;
 
       // CRITICAL FIX: Use standard 'data' and 'end' events for robust streaming.
+      const transcodedStream = new PassThrough();
+      outputStream.pipe(transcodedStream);
+
       transcodedStream.on('data', (chunk) => {
         if (!firstChunkTime) {
           firstChunkTime = Date.now();
@@ -876,6 +909,14 @@ class WebSocketOrchestrator extends EventEmitter {
         responseId: this.currentResponseId,
         correlationId
       });
+    }
+  }
+
+  stopFfmpeg() {
+    if (this.ffmpegCommand) {
+      logger.info('🔪 [FFMPEG] Attempting to kill FFMPEG process', { callSid: this.callSid });
+      this.ffmpegCommand.kill('SIGKILL');
+      this.ffmpegCommand = null;
     }
   }
 
