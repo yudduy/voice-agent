@@ -313,7 +313,12 @@ const generateElevenLabsAudio = async (text, options = {}) => {
     const cachedUrl = ttsCache.get(cacheKey);
     try {
       await fsp.access(path.join(TTS_CACHE_DIR, path.basename(cachedUrl)));
-      logger.debug('Returning cached ElevenLabs TTS audio', { key: cacheKey, url: cachedUrl });
+      logger.info('💾 [TTS-CACHE-HIT] Returning cached ElevenLabs TTS audio', { 
+        key: cacheKey, 
+        url: cachedUrl,
+        text: text.substring(0, 50) + '...',
+        savedApiCall: true
+      });
       return cachedUrl;
     } catch (error) {
       logger.warn('Cached TTS file not found, removing from cache', { key: cacheKey, url: cachedUrl });

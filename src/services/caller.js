@@ -36,11 +36,20 @@ const initiateCall = async (contact) => {
 
     logger.info(`Initiating call to ${contactName}`, { userId, formattedPhone: phoneNumberToCall });
     
+    // Always use streaming endpoint - unified webhook is being deprecated
+    const connectUrl = `${telephonyConfig.webhookBaseUrl}/api/media-stream/connect`;
+    const statusUrl = `${telephonyConfig.webhookBaseUrl}/api/media-stream/status`;
+    
+    logger.info('Using STREAMING mode with Deepgram STT for outgoing call', { 
+      connectUrl,
+      statusUrl 
+    });
+    
     const call = await client.calls.create({
-      url: `${telephonyConfig.webhookBaseUrl}/api/calls/connect#ct=10000&rt=15000&rc=3&rp=ct,rt`, 
+      url: connectUrl,
       to: phoneNumberToCall,
       from: telephonyConfig.phoneNumber,
-      statusCallback: `${telephonyConfig.webhookBaseUrl}/api/calls/status#ct=5000&rt=10000&rc=2&rp=ct,rt`,
+      statusCallback: statusUrl,
       statusCallbackEvent: ['initiated', 'ringing', 'answered', 'completed'],
       statusCallbackMethod: 'POST'
       // NOTE: record and recordingStatusCallback are NOT valid attributes for call creation

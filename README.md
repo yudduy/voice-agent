@@ -1,13 +1,15 @@
-# VERIES Caller (Voice AI Assistant)
+# VERIES Caller (Duy Looking for Zoey! 📞)
 
-Voice-first AI agent that:
+Voice-first AI agent with a specific family mission:
 
-* places outbound calls via **Twilio**,
-* converses naturally using **Groq Whisper STT → OpenAI GPT-4o → ElevenLabs TTS** pipeline,
-* stores long-term memory in **Supabase Postgres** and short-term context in **Upstash Redis**,
-* logs every call/transcript with comprehensive monitoring.
+* **Calls to find Zoey directly** - Duy (younger brother) trying to reach his sister Zoey for homework help
+* **Smart call logic**: Asks "Hi this is Duy, is this Zoey?" - if YES: gets demanding about needing help, if NO: politely hangs up
+* **Voice Pipeline**: **Groq Whisper STT → OpenAI GPT-4o-mini → ElevenLabs TTS**
+* **Personality**: Natural, slightly annoying younger brother who needs help with homework and projects
+* **Storage**: Long-term memory in **Supabase Postgres**, short-term context in **Upstash Redis**
+* **Monitoring**: Comprehensive call/transcript logging
 
-**🚀 NEW: Sub-500ms latency with streaming pipeline, speculative execution, and backchannels**
+**🚀 NEW: Duy/Zoey sibling dynamic with smart hangup logic (150 token conversational responses)**
 
 ---
 
@@ -16,7 +18,7 @@ Voice-first AI agent that:
 | Component | Technology | Purpose |
 |-----------|------------|---------|
 | **Speech-to-Text** | Groq Whisper v3 (primary) + Twilio STT (fallback) | High-accuracy transcription with recording |
-| **Conversation AI** | OpenAI GPT-4o-mini + Streaming API | Natural conversation with ultra-low latency |
+| **Conversation AI** | OpenAI GPT-4o-mini (150 tokens) | Duy persona - younger brother needing homework help |
 | **Text-to-Speech** | ElevenLabs Flash v2.5 (primary) + Hyperbolic (fallback) + Twilio (final) | Premium voice synthesis optimized for speed |
 | **Telephony** | Twilio Programmable Voice + SMS | Call handling and webhooks |
 | **Database** | Supabase Postgres | User profiles, call history, preferences |

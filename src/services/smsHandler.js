@@ -10,7 +10,7 @@ const logger = require('../utils/logger');
 const openai = require('../config/ai').openai;
 const twilio = require('twilio')(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN);
 
-const SMS_SYSTEM_PROMPT = "You are VERIES, a friendly and helpful AI assistant. Keep your responses concise and conversational, suitable for SMS. Use the user's name when appropriate to personalize the conversation.";
+const SMS_SYSTEM_PROMPT = "You are Duy trying to reach your older sister Zoey. You're her younger brother who needs help with homework and other stuff. First, confirm if you're talking to Zoey. If yes, act like an annoying younger sibling who needs help! If no, politely end the conversation. Keep responses natural and conversational for SMS - no weird abbreviations or 'OMG' stuff.";
 
 /**
  * Main SMS webhook handler with onboarding support
@@ -71,7 +71,7 @@ async function handleIncomingSms(twilioPayload) {
 async function handleUnknownNumber(phoneNumber, messageContent, messageSid) {
   logger.info(`SMS from unknown number: ${phoneNumber}`);
   
-  const responseMessage = "Hi! 👋 To use VERIES, please sign up at our website first. Once you create an account with this phone number, I'll be ready to assist you!";
+  const responseMessage = "Hi! This is Duy, is this Zoey? I'm trying to reach her! If you're not Zoey, sorry for bothering you!";
   
   await sendSmsResponse(phoneNumber, responseMessage);
   
@@ -104,13 +104,13 @@ async function handleOnboardingResponse(phoneLink, userProfile, messageContent, 
       content: messageContent,
     });
 
-    // Send personalized welcome message
-    const welcomeMessage = `Hi ${userProfile.first_name}! 🎉 Welcome to VERIES! I'm your AI assistant and I'm excited to help you.`;
+    // Send personalized welcome message asking if this is Zoey
+    const welcomeMessage = `Hi ${userProfile.first_name}! This is Duy, is this Zoey?`;
     let followUpMessage;
 
     // Check if user's first message was a greeting or question
     if (isGreeting(messageContent)) {
-      followUpMessage = `What can I help you with today? You can ask me questions, have a conversation, or just say what's on your mind!`;
+      followUpMessage = `I'm trying to reach Zoey - are you her? I need help with homework.`;
     } else {
       // User asked a question right away - answer it
       followUpMessage = await generateAiResponse(messageContent, userProfile, []);
@@ -189,7 +189,7 @@ async function handleRegularConversation(phoneLink, userProfile, messageContent,
 async function handlePendingUser(phoneLink, userProfile, messageContent, messageSid) {
   logger.info(`SMS from pending user: ${userProfile.first_name} ${userProfile.last_name}`);
   
-  const message = `Hi ${userProfile.first_name}! I see you've signed up for VERIES. Let me send you a proper welcome message to get started!`;
+  const message = `Hi ${userProfile.first_name}! This is Duy, is this Zoey? I'm trying to reach her - I need help with something!`;
   
   await sendSmsResponse(phoneLink.phone_number, message);
   
@@ -230,7 +230,7 @@ async function generateAiResponse(messageContent, userProfile, conversationHisto
     
   } catch (error) {
     logger.error('Error generating AI response:', error);
-    return `Hi ${userProfile.first_name}! I'm having a little trouble processing your message right now. Please try again in a moment.`;
+    return `Ugh ${userProfile.first_name}, I'm having some technical issues right now. This is so annoying! Please try again in a moment!`;
   }
 }
 

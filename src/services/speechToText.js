@@ -11,6 +11,7 @@ const fs = require('fs');
 const path = require('path');
 const os = require('os');
 const Groq = require('groq-sdk'); // Use Groq SDK
+const { createClient } = require('@deepgram/sdk'); // Use Deepgram SDK v3
 
 // Initialize Groq client if enabled and key is provided
 let groqClient;
@@ -25,6 +26,20 @@ if (aiConfig.groqConfig.enabled) {
 } else if (process.env.NODE_ENV !== 'test' && !process.env.INTEGRATION_TEST) {
   // Only log the warning if not in a test environment, to reduce noise.
   logger.warn('Groq STT is disabled in configuration or API key is missing.');
+}
+
+// Initialize Deepgram client if enabled and key is provided
+let deepgramClient;
+if (aiConfig.deepgramConfig && aiConfig.deepgramConfig.enabled) {
+  try {
+    deepgramClient = createClient(aiConfig.deepgramConfig.apiKey);
+    logger.info('Deepgram client initialized for STT.');
+  } catch (error) {
+    logger.error('Failed to initialize Deepgram client', { error: error.message });
+    // Deepgram STT will be effectively disabled
+  }
+} else if (process.env.NODE_ENV !== 'test' && !process.env.INTEGRATION_TEST) {
+  logger.warn('Deepgram STT is disabled in configuration or API key is missing.');
 }
 
 /**
@@ -159,9 +174,71 @@ const validateSpeechResult = (speechResult, confidence) => {
   return true;
 };
 
+/**
+ * Transcribe audio using Deepgram Nova-3 API.
+ * @param {string} audioUrl - URL of the audio file (e.g., from Twilio RecordingUrl)
+ * @returns {Promise<string|null>} - Transcribed text or null on failure
+ */
+const transcribeWithDeepgram = async (audioUrl) => {
+  // Check if Deepgram client is available and operational
+  if (!deepgramClient) {
+    logger.debug('Deepgram STT skipped: Deepgram client not initialized or enabled.');
+    return null;
+  }
+  if (!audioUrl) {
+    logger.warn('Deepgram STT skipped: No audio URL provided.');
+    return null;
+  }
+
+  try {
+    const startTime = Date.now();
+    logger.debug('Starting Deepgram transcription...', { audioUrl });
+
+    // Deepgram v3 API call
+    const response = await deepgramClient.listen.prerecorded.transcribeUrl(
+      {
+        url: audioUrl
+      },
+      {
+        model: aiConfig.deepgramConfig.model || 'nova-3',
+        language: aiConfig.deepgramConfig.language || 'en',
+        smart_format: aiConfig.deepgramConfig.smart_format !== false,
+        punctuate: aiConfig.deepgramConfig.punctuate !== false,
+        diarize: aiConfig.deepgramConfig.diarize || false
+      }
+    );
+
+    const transcript = response.results?.channels?.[0]?.alternatives?.[0]?.transcript || '';
+    const confidence = response.results?.channels?.[0]?.alternatives?.[0]?.confidence || 0;
+    const latency = Date.now() - startTime;
+
+    logger.info('🎤 [STT-SUCCESS] Deepgram transcription successful', {
+      transcribedText: transcript,
+      textLength: transcript.length,
+      confidence: confidence,
+      latency: latency,
+      provider: 'deepgram-nova-3'
+    });
+    
+    return transcript;
+  } catch (error) {
+    const errorInfo = {
+      message: error.message,
+      code: error.code,
+      name: error.name
+    };
+    
+    logger.error('🎤 [STT-ERROR] Deepgram transcription failed', {
+      error: errorInfo,
+      audioUrl: audioUrl ? audioUrl.substring(0, 100) + '...' : 'null'
+    });
+    return null;
+  }
+};
+
 module.exports = {
-  transcribeWithGroq, // Export new function
+  transcribeWithGroq, // Export Groq function
+  transcribeWithDeepgram, // Export Deepgram function
   processTwilioSpeechResult,
   validateSpeechResult,
-  // transcribeWithWhisper, // Remove or comment out old OpenAI function if no longer needed
 };

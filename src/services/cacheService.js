@@ -59,7 +59,7 @@ async function getConversation(userId) {
  * @param {number} maxTurns - The maximum number of turns to store.
  * @returns {Promise<void>}
  */
-async function appendConversation(userId, turn, maxTurns = 15) {
+async function appendConversation(userId, turn, maxTurns = 30) {
   try {
     const key = getConversationKey(userId);
     const history = (await getConversation(userId)) || [];
@@ -141,10 +141,167 @@ async function updateConversation(userId, conversation) {
   return setConversation(userId, conversation);
 }
 
+/**
+ * Response caching for common AI responses
+ */
+const RESPONSE_CACHE_TTL = parseInt(process.env.RESPONSE_CACHE_TTL || '3600'); // 1 hour default
+const RESPONSE_CACHE_PREFIX = 'response:';
+
+/**
+ * Generates a cache key for an AI response based on user input and context
+ * @param {string} userInput - The user's input text
+ * @param {Array} conversationHistory - Recent conversation history for context
+ * @returns {string} The cache key
+ */
+const generateResponseCacheKey = (userInput, conversationHistory = []) => {
+  const crypto = require('crypto');
+  
+  // Normalize the input (lowercase, trim whitespace)
+  const normalizedInput = userInput.toLowerCase().trim();
+  
+  // Get last 2 turns for context (to distinguish same question in different contexts)
+  const contextString = conversationHistory
+    .slice(-2)
+    .map(turn => `${turn.role}:${turn.content}`)
+    .join('|');
+  
+  // Create a hash from input + context
+  const hash = crypto.createHash('md5')
+    .update(normalizedInput + contextString)
+    .digest('hex');
+  
+  return `${RESPONSE_CACHE_PREFIX}${hash}`;
+};
+
+/**
+ * Get a cached AI response if available
+ * @param {string} userInput - The user's input text
+ * @param {Array} conversationHistory - Recent conversation history
+ * @returns {Promise<string|null>} The cached response or null
+ */
+async function getCachedResponse(userInput, conversationHistory = []) {
+  try {
+    if (process.env.ENABLE_RESPONSE_CACHING !== 'true') {
+      return null;
+    }
+    
+    const cacheKey = generateResponseCacheKey(userInput, conversationHistory);
+    const cachedResponse = await redis.get(cacheKey);
+    
+    if (cachedResponse) {
+      logger.info('💾 [CACHE-HIT] Found cached AI response', {
+        userInput: userInput.substring(0, 50),
+        cacheKey,
+        responseLength: cachedResponse.length
+      });
+      return cachedResponse;
+    }
+    
+    return null;
+  } catch (error) {
+    logger.error('Error retrieving cached response:', error.message);
+    return null;
+  }
+}
+
+/**
+ * Cache an AI response
+ * @param {string} userInput - The user's input text
+ * @param {Array} conversationHistory - Recent conversation history
+ * @param {string} response - The AI response to cache
+ * @param {number} ttl - Optional TTL override (seconds)
+ * @returns {Promise<void>}
+ */
+async function setCachedResponse(userInput, conversationHistory, response, ttl = RESPONSE_CACHE_TTL) {
+  try {
+    if (process.env.ENABLE_RESPONSE_CACHING !== 'true') {
+      return;
+    }
+    
+    // Only cache responses that are likely to be reused
+    const shouldCache = isCacheableResponse(userInput, response);
+    if (!shouldCache) {
+      return;
+    }
+    
+    const cacheKey = generateResponseCacheKey(userInput, conversationHistory);
+    await redis.set(cacheKey, response, { ex: ttl });
+    
+    logger.info('💾 [CACHE-SET] Cached AI response', {
+      userInput: userInput.substring(0, 50),
+      cacheKey,
+      responseLength: response.length,
+      ttl
+    });
+  } catch (error) {
+    logger.error('Error caching response:', error.message);
+  }
+}
+
+/**
+ * Determines if a response should be cached based on heuristics
+ * @param {string} userInput - The user's input
+ * @param {string} response - The AI response
+ * @returns {boolean} Whether to cache the response
+ */
+function isCacheableResponse(userInput, response) {
+  // Don't cache confusion/repetition requests
+  const confusionPatterns = [
+    /what\?/i, /pardon/i, /repeat/i, /didn't\s+(hear|catch)/i,
+    /say\s+that\s+again/i, /excuse\s+me/i, /confused/i,
+    /wait\s+wait/i, /hold\s+on/i, /what's\s+going\s+on/i
+  ];
+  
+  const isConfusionRequest = confusionPatterns.some(pattern => pattern.test(userInput));
+  if (isConfusionRequest) {
+    return false; // Never cache confusion requests
+  }
+  
+  // Common patterns that are good for caching
+  const cacheablePatterns = [
+    /^(hi|hello|hey|good\s+(morning|afternoon|evening))/i,
+    /^(yes|no|yeah|nope|sure|okay|ok)$/i,
+    /^(thank\s*you|thanks|bye|goodbye|see\s*you)/i,
+    /^(what|who|where|when|how)\s+(is|are|do|does)/i,
+    /^(can\s*you|could\s*you|would\s*you|will\s*you)/i,
+    /^(I\s*need|I\s*want|I\s*would\s*like)/i,
+    /^(help|assist|support)/i
+  ];
+  
+  // Check if input matches any cacheable pattern
+  const isCommonInput = cacheablePatterns.some(pattern => pattern.test(userInput));
+  
+  // Don't cache very short or very long responses
+  const isGoodLength = response.length >= 10 && response.length <= 200;
+  
+  // Don't cache responses with specific/dynamic content
+  const hasNoDynamicContent = !response.match(/\d{4,}|\$[\d,.]+|today|tomorrow|yesterday/i);
+  
+  return isCommonInput && isGoodLength && hasNoDynamicContent;
+}
+
+/**
+ * Clear all cached responses (useful for updates)
+ * @returns {Promise<void>}
+ */
+async function clearResponseCache() {
+  try {
+    // This would need to be implemented based on your Redis setup
+    // For now, we'll log a warning
+    logger.warn('Response cache clearing not implemented for current Redis setup');
+  } catch (error) {
+    logger.error('Error clearing response cache:', error.message);
+  }
+}
+
 module.exports = {
   getConversation,
   setConversation,
-  updateConversation, // Add the missing alias
+  updateConversation,
   appendConversation,
   clearConversation,
+  // Response caching functions
+  getCachedResponse,
+  setCachedResponse,
+  clearResponseCache,
 }; 

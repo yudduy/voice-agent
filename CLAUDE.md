@@ -4,11 +4,15 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-**VERIES Caller** is a sophisticated voice AI calling agent that places outbound phone calls and has natural conversations using a production-ready voice pipeline:
+**VERIES Caller** is a sophisticated voice AI calling agent with a specific family mission - it's Duy trying to reach his older sister Zoey for homework help! Duy is the younger brother who constantly needs help with homework and other sibling stuff.
 
-**Pipeline**: Groq distil-whisper STT → OpenAI GPT-4.1-nano → ElevenLabs Flash v2.5
+**Behavior**: The agent calls and asks "Hi this is Duy, is this Zoey?" If the person confirms they are Zoey, the agent gets demanding and slightly annoyed (typical younger sibling behavior) asking for help. If they say no or they're not Zoey, the agent politely says "Oh sorry, wrong number" and hangs up immediately.
 
-**🎯 Current Status**: Production-ready with sequential processing. Advanced streaming components are fully implemented but currently disabled to prevent audio cutoff issues.
+**Personality**: When talking to Zoey, the agent acts like a frustrated younger brother who needs help - natural, conversational, slightly whiny/demanding but not mean. He asks for specific help with homework, projects, college advice, etc. Uses natural speech patterns with no weird abbreviations like "OMG".
+
+**Voice Pipeline**: Twilio Media Streams → Deepgram Nova-2 STT → OpenAI GPT-4o-mini → ElevenLabs Turbo v2 TTS
+
+**🎯 Current Status**: Production-ready with real-time streaming enabled. Features proper turn-taking, barge-in detection, and duplicate prevention. Duy/Zoey sibling dynamic with smart hangup logic for wrong numbers.
 
 ## Quick Start Commands
 
@@ -40,12 +44,17 @@ npm test -- --testNamePattern="specific test"
 
 ## Architecture
 
-### Voice Pipeline (Current Production)
-1. **Incoming Call** → Twilio → `/api/calls/connect` (greeting)
-2. **User Speech** → Twilio STT → `/api/calls/respond` 
-3. **AI Processing** → OpenAI GPT-4.1-nano → Redis context
-4. **Speech Synthesis** → ElevenLabs TTS → Audio playback
-5. **Loop** → Gather for next input
+### Voice Pipeline (Real-time Streaming)
+1. **Incoming Call** → Twilio → `/api/media-stream/connect` → WebSocket establishment
+2. **Real-time Audio** → Twilio Media Streams → WebSocket → Deepgram Nova-2 STT
+3. **Turn Management**:
+   - Barge-in detection (stops agent when user speaks)
+   - Speech end detection (500ms silence timeout)
+   - Duplicate prevention (debouncing rapid STT results)
+   - State tracking (isSpeaking, processingLLM flags)
+4. **AI Processing** → OpenAI GPT-4o-mini → Redis context
+5. **Speech Synthesis** → ElevenLabs TTS → FFmpeg transcoding → Twilio Media Stream
+6. **Continuous bidirectional audio** with proper turn-taking and interruption handling
 
 ### Data Flow
 - **Supabase**: User profiles, call history, preferences
@@ -53,9 +62,10 @@ npm test -- --testNamePattern="specific test"
 - **Local Cache**: TTS audio files (`/public/tts-cache/`)
 
 ### Active Components
-- **Webhooks**: `unifiedTwilioWebhooks.js` (single active handler)
-- **Services**: `conversation.js`, `speechToText.js`, `textToSpeech.js`
-- **Repositories**: `userRepository.js`, `historyRepository.js`
+- **Webhooks**: `mediaStreamWebhook.js` (WebSocket handler)
+- **Orchestrator**: `websocketOrchestrator.js` (manages real-time pipeline)
+- **Services**: `conversation.js`, `userRepository.js`
+- **Real-time**: Deepgram WebSocket STT, ElevenLabs TTS, FFmpeg transcoding
 
 ## Key Files
 
@@ -73,8 +83,8 @@ npm test -- --testNamePattern="specific test"
 - `src/config/redis.js` - Cache configuration
 
 ### Webhooks
-- `src/webhooks/unifiedTwilioWebhooks.js` - **ACTIVE** webhook handler
-- `src/webhooks/audioWebhooks.js` - Audio file serving
+- `src/webhooks/mediaStreamWebhook.js` - **ACTIVE** WebSocket handler for real-time audio
+- `src/services/websocketOrchestrator.js` - Manages the entire real-time conversation flow
 - `src/webhooks/smsWebhook.js` - SMS handling
 
 ## Environment Variables
@@ -166,22 +176,24 @@ Tables in `supabase/migrations/0001_initial_schema.sql`:
 - `preferences` - User settings
 - `sms_history` - SMS interactions
 
-## Advanced Features (Available but Disabled)
+## Real-time Streaming Architecture
 
-### Streaming Components (Fully Implemented)
-- `services/streamingConversation.js` - OpenAI streaming
-- `services/speculativeEngine.js` - Predictive processing
-- `services/backchannelManager.js` - Natural conversation flow
-- `services/ttsQueue.js` - Prioritized TTS generation
+### Turn-Taking Management
+The `websocketOrchestrator.js` implements sophisticated turn-taking:
+- **Barge-in Detection**: When user speaks during agent response, immediately stops TTS
+- **Speech End Detection**: 500ms silence timeout before processing final transcript
+- **Duplicate Prevention**: Tracks last processed transcript and enforces minimum time between responses
+- **State Management**: `isSpeaking`, `processingLLM`, and `currentResponseId` prevent race conditions
 
-### Why Currently Disabled
-The streaming pipeline was causing audio cutoff issues where responses would be interrupted mid-sentence. The system is configured to use sequential processing for reliability.
+### WebSocket Connections
+- **Twilio Media Stream**: Bidirectional audio transport
+- **Deepgram STT**: Real-time transcription with VAD events
+- **Turn Coordination**: Proper queueing and interruption handling
 
-### To Re-enable (when issues resolved)
+### Required Environment
 ```env
-ENABLE_STREAMING=true
-ENABLE_SPECULATIVE_EXECUTION=true
-ENABLE_BACKCHANNELS=true
+ENABLE_MEDIA_STREAMS=true
+DEEPGRAM_API_KEY=your_key
 ```
 
 ## Testing Strategy
@@ -222,11 +234,12 @@ npm test -- tests/webhooks/                      # Webhook handlers
 ## Troubleshooting
 
 ### Common Issues
-1. **Audio Cutoff**: Check for SSML in AI responses
-2. **TwiML Validation**: Ensure clean XML generation
-3. **Environment Variables**: Verify all required keys set
-4. **Phone Format**: Use E.164 format (+1234567890)
-5. **Webhook Connectivity**: Ensure ngrok tunnel active
+1. **Duplicate Responses**: Fixed with proper turn-taking and debouncing
+2. **Audio Interruptions**: Barge-in detection now stops agent mid-speech
+3. **Race Conditions**: State management prevents multiple concurrent LLM calls
+4. **WebSocket Issues**: Ensure ENABLE_MEDIA_STREAMS=true and server restart
+5. **Phone Format**: Use E.164 format (+1234567890)
+6. **Webhook Connectivity**: Ensure ngrok tunnel active
 
 ### Debug Commands
 ```bash

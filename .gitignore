@@ -11,6 +11,12 @@ yarn-error.log*
 
 # Environment variables
 .env
+scripts/.env
+
+# Runtime files
+server.pid
+server.log
+*.pid
 
 # Build output
 dist/
@@ -25,7 +31,39 @@ temp/
 .vscode/
 .DS_Store
 
+# OS generated files
+Thumbs.db
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+
 # Coverage reports
 coverage/
+
+# TTS Cache
 public/tts-cache/*
 !public/tts-cache/.gitkeep
+
+# Test files and debugging
+test-*.mp3
+debug-*.json
+
+# Backup files
+*.bak
+*.backup
+*.swp
+*.swo
+*~
+
+# Documentation build artifacts
+docs/build/
+
+# Local development files
+.vscode/
+.fleet/
+*.code-workspace
+
+CLAUDE.md
+.claude

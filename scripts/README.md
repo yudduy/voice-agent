@@ -10,19 +10,23 @@ node scripts/voice-test.js [phone_number]
 ```
 
 **Purpose**: Comprehensive test of the complete voice pipeline
-- **Pipeline**: Groq Whisper STT → OpenAI GPT-4o → ElevenLabs TTS
+- **Automatic Mode Detection**: Detects if streaming or batch mode is enabled
+- **Batch Mode Pipeline**: Twilio STT → OpenAI GPT-4.1-nano → ElevenLabs TTS
+- **Streaming Mode Pipeline**: Deepgram Nova-3 → OpenAI GPT-4.1-nano → ElevenLabs TTS (real-time)
 - **Target**: Real phone call to specified number (default: +19713364433)
 - **Features**:
-  - Tests all API connections (Twilio, ElevenLabs, Groq, OpenAI, Supabase, Redis)
+  - Automatically configures Twilio webhooks based on mode
+  - Tests all API connections (Twilio, ElevenLabs, Deepgram/Groq, OpenAI, Supabase, Redis)
   - Creates mock user with complete Supabase schema
   - Places real voice call with webhook infrastructure
-  - Enhanced logging for all pipeline components
+  - Enhanced logging showing which STT provider is being used
   - Validates memory retention in Redis
   - Monitors performance metrics
   - Comprehensive result validation
 
 **Example**:
 ```bash
+# Test will show which mode is active
 node scripts/voice-test.js +15551234567
 ```
 

@@ -4,11 +4,14 @@
 const aiConfig = require('../config/ai');
 const { buildMessages } = require('./promptBuilder');
 
-// --- VERIES Persona Requirements ---
+// --- COLE FAN Persona Greetings ---
 const VERIES_PERSONA_PROMPT = aiConfig.openAI.systemPrompt;
 
 const VERIES_GREETINGS = [
-  "Hi, this is an AI assistant calling. Is now a good time to chat?"
+  "Hi this is Duy, is this Zoey?",
+  "Hey, this is Duy. Is this Zoey?",
+  "Hi, Duy here. Is this Zoey?",
+  "Hey this is Duy, am I talking to Zoey?"
 ];
 
 /**

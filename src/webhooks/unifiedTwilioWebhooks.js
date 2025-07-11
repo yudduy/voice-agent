@@ -7,7 +7,6 @@ const router = express.Router();
 const VoiceResponse = require('twilio').twiml.VoiceResponse;
 const logger = require('../utils/logger');
 const conversationService = require('../services/conversation');
-const { createStreamingHandler } = require('../services/streamingConversation');
 const speechToText = require('../services/speechToText');
 const textToSpeech = require('../services/textToSpeech');
 const aiConfig = require('../config/ai');
@@ -36,9 +35,15 @@ const createCleanGatherOptions = (action = '/api/calls/respond') => {
     timeout: 30
   };
   
+  // Note: For Deepgram, we would need to use Record verb separately
+  // Twilio Gather doesn't support recording directly
+  // For now, we'll use Twilio's built-in STT which is still fast
+  
   // Log that we're creating clean options
-  logger.debug('[TwiML] Creating clean Gather options (no recording attributes)', {
-    options: JSON.stringify(options)
+  logger.debug('[TwiML] Creating Gather options', {
+    options: JSON.stringify(options),
+    sttPreference: aiConfig.speechPreferences.sttPreference,
+    recordingEnabled: aiConfig.speechPreferences.enableRecording
   });
   
   // Return a frozen object to prevent accidental modification
@@ -113,12 +118,13 @@ const validateTwiML = (twimlString) => {
 
 /**
  * Feature flags for different processing modes
+ * All advanced features disabled for stability
  */
 const FEATURES = {
-  STREAMING: aiConfig.speechPreferences.enableStreaming,
-  SPECULATIVE: aiConfig.speculativeConfig.enabled,
-  BACKCHANNELS: aiConfig.backchannelConfig.enabled,
-  WEBRTC: aiConfig.webrtcConfig.enabled
+  STREAMING: false,
+  SPECULATIVE: false,
+  BACKCHANNELS: false,
+  WEBRTC: false
 };
 
 /**
@@ -128,6 +134,16 @@ const FEATURES = {
 const getProcessingMode = () => {
   // FORCE standard mode to prevent streaming issues that cause audio cutoffs
   return 'STANDARD';
+};
+
+/**
+ * Check if Deepgram STT should be used
+ */
+const shouldUseDeepgram = (recordingUrl) => {
+  return aiConfig.speechPreferences.sttPreference === 'deepgram' && 
+         aiConfig.deepgramConfig && 
+         aiConfig.deepgramConfig.enabled && 
+         recordingUrl;
 };
 
 /**
@@ -155,14 +171,35 @@ const processSTT = async (userInput, recordingUrl, confidence, callSid) => {
     recordingUrl: recordingUrl ? recordingUrl.substring(0, 80) + '...' : null
   });
 
-  // Try Groq STT first if available
-  if (shouldUseGroq(recordingUrl)) {
-    logger.debug('[Unified STT] Attempting Groq STT', { callSid });
+  // Try Deepgram STT first if available (fastest)
+  if (shouldUseDeepgram(recordingUrl)) {
+    logger.debug('[Unified STT] Attempting Deepgram STT', { callSid });
+    try {
+      const deepgramResult = await speechToText.transcribeWithDeepgram(recordingUrl);
+      if (deepgramResult && speechToText.validateSpeechResult(deepgramResult)) {
+        processedInput = deepgramResult;
+        logger.info('[Unified STT] Used Deepgram STT', {
+          callSid,
+          textLength: deepgramResult.length,
+          preview: deepgramResult.substring(0, 50) + '...'
+        });
+      }
+    } catch (error) {
+      logger.warn('[Unified STT] Deepgram STT failed', {
+        callSid,
+        error: error.message
+      });
+    }
+  }
+
+  // Fallback to Groq STT if Deepgram fails
+  if (!processedInput && shouldUseGroq(recordingUrl)) {
+    logger.debug('[Unified STT] Attempting Groq STT as fallback', { callSid });
     try {
       const groqResult = await speechToText.transcribeWithGroq(recordingUrl);
       if (groqResult && speechToText.validateSpeechResult(groqResult)) {
         processedInput = groqResult;
-        logger.info('[Unified STT] Used Groq STT', {
+        logger.info('[Unified STT] Used Groq STT (fallback)', {
           callSid,
           textLength: groqResult.length,
           preview: groqResult.substring(0, 50) + '...'
@@ -348,9 +385,7 @@ router.post('/connect', async (req, res) => {
     await conversationService.initializeConversation(callSid, { _id: user.id });
 
     // Generate concise greeting using ElevenLabs TTS
-    const greetingText = user.name && user.name !== 'Guest User' ? 
-      `Hi ${user.name}, this is an AI assistant calling. Is now a good time to chat?` : 
-      "Hi, this is an AI assistant calling. Is now a good time to chat?";
+    const greetingText = "Hi this is Duy, is this Zoey?";
 
     // Play greeting first
     const audioUrl = await textToSpeech.generateAudio(greetingText);
@@ -563,8 +598,6 @@ router.post('/process-recording', async (req, res) => {
       processingMode,
       elapsedMs,
       sttLatency,
-      speculative: result.speculative || false,
-      corrected: result.corrected || false,
       metrics: result.metrics || {}
     });
 
@@ -678,9 +711,7 @@ router.post('/respond', async (req, res) => {
         processingMode
       });
 
-      if (handler.processPartialInput) {
-        await handler.processPartialInput(partialResult, parseFloat(twilioConfidence) || 0.8);
-      }
+      // Partial input processing disabled for stability
 
       // Return minimal response for partial input
       response.gather(createCleanGatherOptions());
@@ -777,8 +808,6 @@ router.post('/respond', async (req, res) => {
       processingMode,
       elapsedMs,
       sttLatency,
-      speculative: result.speculative || false,
-      corrected: result.corrected || false,
       metrics: result.metrics || {}
     });
 

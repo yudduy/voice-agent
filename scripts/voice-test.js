@@ -8,7 +8,15 @@
  *   node scripts/voice-test.js +1234567890
  */
 
-require('dotenv').config();
+// CRITICAL: Load environment variables from the project root, not the scripts directory
+const path = require('path');
+require('dotenv').config({ path: path.join(__dirname, '..', '.env') });
+
+// DIAGNOSTIC: Log the critical environment variable immediately
+console.log('🔍 [ENV CHECK] ENABLE_MEDIA_STREAMS:', process.env.ENABLE_MEDIA_STREAMS);
+console.log('🔍 [ENV CHECK] Current working directory:', process.cwd());
+console.log('🔍 [ENV CHECK] Script directory:', __dirname);
+
 const { performance } = require('perf_hooks');
 const logger = require('../src/utils/logger');
 const { bootstrapUser, deleteUser } = require('../tests/utils/bootstrapUser');
@@ -44,15 +52,25 @@ class VoiceTest {
   async validateEnvironment() {
     logger.info('Validating environment...');
     
+    // Show current mode
+    const isStreamingEnabled = process.env.ENABLE_MEDIA_STREAMS === 'true';
+    logger.info(`🎙️ Mode: ${isStreamingEnabled ? 'REAL-TIME STREAMING (Deepgram)' : 'BATCH PROCESSING (Twilio STT)'}`);
+    
     // Check required environment variables
     const required = [
       'TWILIO_ACCOUNT_SID',
       'TWILIO_AUTH_TOKEN', 
       'TWILIO_PHONE_NUMBER',
       'OPENAI_API_KEY',
-      'GROQ_API_KEY',
       'ELEVENLABS_API_KEY'
     ];
+    
+    // Add Deepgram requirement if streaming is enabled
+    if (isStreamingEnabled) {
+      required.push('DEEPGRAM_API_KEY');
+    } else {
+      required.push('GROQ_API_KEY');
+    }
     
     for (const envVar of required) {
       if (!process.env[envVar]) {
@@ -83,9 +101,9 @@ class VoiceTest {
     const testUserId = uuidv4();
     const testName = `Test User ${Date.now()}`;
     
-    await bootstrapUser({ id: testUserId, phone: this.phoneNumber, name: testName });
-    this.testUserId = testUserId;
-    logger.info(`✓ Test user created: ${this.testUserId}`);
+    const user = await bootstrapUser({ id: testUserId, phone: this.phoneNumber, name: testName });
+    this.testUserId = user.id;
+    logger.info(`✓ Test user created/ensured: ${this.testUserId}`);
     
     // Setup ngrok tunnel
     logger.info('Setting up ngrok tunnel...');
@@ -107,17 +125,24 @@ class VoiceTest {
     }
     
     // Use existing ngrok URL from .env
-    this.ngrokUrl = process.env.BASE_URL;
+    this.ngrokUrl = process.env.WEBHOOK_BASE_URL || process.env.BASE_URL;
     if (!this.ngrokUrl) {
-      throw new Error('BASE_URL not found in .env file');
+      throw new Error('WEBHOOK_BASE_URL or BASE_URL not found in .env file');
     }
     
     logger.info(`✓ Using existing ngrok tunnel from .env: ${this.ngrokUrl}`);
     
-    // Verify ngrok connection
+    // Verify ngrok connection and check webhook configuration
     try {
       await axios.get(`${this.ngrokUrl}/health`);
       logger.info('✓ Ngrok tunnel connection verified');
+      
+      // Check current Twilio webhook configuration
+      const twilioWebhookManager = require('../src/services/twilioWebhookManager');
+      const currentConfig = await twilioWebhookManager.getCurrentConfig();
+      logger.info(`📞 Twilio webhooks configured for: ${currentConfig.mode.toUpperCase()} mode`);
+      logger.info(`   Voice URL: ${currentConfig.voiceUrl}`);
+      
     } catch (error) {
       throw new Error(`Ngrok tunnel verification failed: ${error.message}`);
     }
@@ -150,13 +175,20 @@ class VoiceTest {
       name: `Test User ${Date.now()}`
     };
     
-    const result = await callerService.initiateCall(testContact);
-    
-    if (result.success) {
-      this.callSid = result.callSid;
+    try {
+      // initiateCall returns the Twilio call object directly on success
+      const call = await callerService.initiateCall(testContact);
+      
+      // Extract the call SID from the Twilio call object
+      this.callSid = call.sid;
       logger.info(`✓ Call placed successfully: ${this.callSid}`);
-    } else {
-      throw new Error(`Call placement failed: ${result.error}`);
+      logger.info(`  Status: ${call.status}`);
+      logger.info(`  To: ${call.to}`);
+      logger.info(`  From: ${call.from}`);
+    } catch (error) {
+      // initiateCall throws errors on failure
+      logger.error('Call placement failed:', error);
+      throw new Error(`Call placement failed: ${error.message}`);
     }
   }
 
@@ -217,11 +249,15 @@ class VoiceTest {
   }
 
   printResults() {
-    logger.info('=== Voice Test Results ===');
+    const isStreamingEnabled = process.env.ENABLE_MEDIA_STREAMS === 'true';
+    logger.info('\n=== Voice Test Results ===');
+    logger.info(`Mode: ${isStreamingEnabled ? 'REAL-TIME STREAMING' : 'BATCH PROCESSING'}`);
+    logger.info(`STT Provider: ${isStreamingEnabled ? 'Deepgram Nova-3' : 'Twilio Built-in'}`);
     logger.info(`Phone: ${this.phoneNumber}`);
     logger.info(`Total time: ${Math.round(this.metrics.totalTime)}ms`);
     logger.info(`Call SID: ${this.callSid}`);
-    logger.info('=== Test Complete ===');
+    logger.info(`Conversation turns: ${this.metrics.conversationTurns}`);
+    logger.info('=== Test Complete ===\n');
   }
 }
 

@@ -3,10 +3,12 @@
  */
 require('dotenv').config();
 const express = require('express');
+const http = require('http'); // CRITICAL: Import http module for proper server creation
 const scheduler = require('./services/scheduler');
 const unifiedTwilioWebhooks = require('./webhooks/unifiedTwilioWebhooks');
 const audioWebhooks = require('./webhooks/audioWebhooks');
 const smsWebhook = require('./webhooks/smsWebhook');
+const { router: mediaStreamRouter, handleWebSocketUpgrade } = require('./webhooks/mediaStreamWebhook');
 const { processOnboardingQueue } = require('./services/smsHandler');
 const logger = require('./utils/logger');
 const path = require('path');
@@ -31,7 +33,8 @@ if (!fs.existsSync(cacheDir)) {
 }
 
 // Trust proxy for ngrok/reverse proxy setups
-app.set('trust proxy', true);
+// Use 1 to trust only the first proxy (ngrok)
+app.set('trust proxy', 1);
 
 // Middleware
 app.use(express.json());
@@ -46,11 +49,38 @@ const apiLimiter = rateLimit({
 	max: performanceConfig.rateLimit.maxRequests,
 	standardHeaders: true,
 	legacyHeaders: false,
+	handler: (req, res) => {
+		logger.warn('Rate limit exceeded', { ip: req.ip, path: req.path });
+		res.status(429).json({ error: 'Too many requests' });
+	},
+	skip: (req) => {
+		// Skip rate limiting for localhost in development
+		return process.env.NODE_ENV !== 'production' && req.ip === '::1';
+	}
 });
 app.use('/api/', apiLimiter);
 
-// Register webhook routes
-app.use('/api/calls', unifiedTwilioWebhooks);
+// Register webhook routes based on streaming preference
+if (process.env.ENABLE_MEDIA_STREAMS === 'true') {
+  logger.info('🚀 [App] Mounting Media Streams webhook for real-time processing with Deepgram STT');
+  app.use('/api/media-stream', mediaStreamRouter);
+  
+  // Mount unified webhook with deprecation warning for backward compatibility
+  app.use('/api/calls', (req, res, next) => {
+    logger.warn('⚠️ [DEPRECATED] Call received on legacy unified webhook', {
+      path: req.path,
+      method: req.method,
+      callSid: req.body?.CallSid
+    });
+    logger.warn('⚠️ [DEPRECATED] This endpoint will be removed. Please ensure all webhooks use /api/media-stream/*');
+    next();
+  }, unifiedTwilioWebhooks);
+} else {
+  logger.info('📦 [App] Using batch-processing webhooks');
+  app.use('/api/calls', unifiedTwilioWebhooks);
+}
+
+// Always mount these routes
 app.use('/api/calls/audio', audioWebhooks);
 app.use('/webhooks', smsWebhook);
 
@@ -115,7 +145,31 @@ const PORT = process.env.PORT || 3000;
 const startServer = async () => {
   try {
     // Supabase client initializes itself; no explicit connect call needed.
-    app.listen(PORT, () => {
+    
+    // Create HTTP server instance first, but don't start listening yet
+    const server = http.createServer(app);
+    
+    // Enable WebSocket upgrade handler BEFORE starting to listen
+    // This prevents the race condition where Twilio might connect before handler is ready
+    if (process.env.ENABLE_MEDIA_STREAMS === 'true') {
+      handleWebSocketUpgrade(server);
+      logger.info('🔌 [App] WebSocket upgrade handler attached for Media Streams');
+      
+      // Auto-configure Twilio webhooks for streaming mode
+      const twilioWebhookManager = require('./services/twilioWebhookManager');
+      twilioWebhookManager.autoConfigureWebhooks()
+        .then(config => {
+          if (config) {
+            logger.info('🔗 [App] Twilio webhooks configured for streaming mode');
+          }
+        })
+        .catch(err => {
+          logger.warn('⚠️ [App] Could not auto-configure Twilio webhooks', { error: err.message });
+        });
+    }
+    
+    // NOW start listening for connections after all handlers are attached
+    server.listen(PORT, () => {
       logger.info(`Server started on port ${PORT}`);
     });
     
