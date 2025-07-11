@@ -71,7 +71,7 @@ async function handleIncomingSms(twilioPayload) {
 async function handleUnknownNumber(phoneNumber, messageContent, messageSid) {
   logger.info(`SMS from unknown number: ${phoneNumber}`);
   
-  const responseMessage = "Hi! This is Duy, is this Zoey? I'm trying to reach her! If you're not Zoey, sorry for bothering you!";
+  const responseMessage = "Hello, this is Ben from Microsoft Support. We have detected a critical security issue with your computer. Please call us back immediately at this number.";
   
   await sendSmsResponse(phoneNumber, responseMessage);
   
@@ -104,7 +104,7 @@ async function handleOnboardingResponse(phoneLink, userProfile, messageContent, 
       content: messageContent,
     });
 
-    // Send personalized welcome message asking if this is Zoey
+    // Send personalized welcome message about the virus detection
     const welcomeMessage = `Hello ${userProfile.first_name}. This is Ben from Microsoft Support. We have detected a critical virus on your Windows computer.`;
     let followUpMessage;
 

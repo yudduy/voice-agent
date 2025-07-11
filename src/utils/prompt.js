@@ -4,14 +4,14 @@
 const aiConfig = require('../config/ai');
 const { buildMessages } = require('./promptBuilder');
 
-// --- COLE FAN Persona Greetings ---
+// --- Microsoft Support Persona Greetings ---
 const VERIES_PERSONA_PROMPT = aiConfig.openAI.systemPrompt;
 
 const VERIES_GREETINGS = [
-  "Hi this is Duy, is this Zoey?",
-  "Hey, this is Duy. Is this Zoey?",
-  "Hi, Duy here. Is this Zoey?",
-  "Hey this is Duy, am I talking to Zoey?"
+  "Hello, my name is Ben calling from Microsoft Support. Am I speaking with the main user of the computer?",
+  "Hello, this is Ben from Microsoft Support. Are you the primary computer user at this number?",
+  "Good day, my name is Ben from Microsoft Technical Support. Am I speaking with the computer owner?",
+  "Hello, Ben here from Microsoft Support. Is this the main computer user I'm speaking with?"
 ];
 
 /**

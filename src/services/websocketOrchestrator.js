@@ -14,6 +14,7 @@ const ffmpegPath = require('@ffmpeg-installer/ffmpeg').path;
 ffmpeg.setFfmpegPath(ffmpegPath);
 const axios = require('axios');
 const aiConfig = require('../config/ai');
+const { createElevenLabsStream } = require('./elevenLabsStream');
 
 
 class WebSocketOrchestrator extends EventEmitter {
@@ -64,6 +65,12 @@ class WebSocketOrchestrator extends EventEmitter {
     this.SPEECH_END_TIMEOUT = 700; // ms to wait after speech ends (increased from 500)
     this.MIN_TIME_BETWEEN_RESPONSES = 1200; // ms minimum between LLM calls (increased from 1000)
     this.BARGE_IN_COOLDOWN = 600; // ms to wait after a barge-in before processing new input
+    this.BARGE_IN_GRACE_PERIOD_MS = 400; // Grace period to prevent immediate barge-in
+    this.speechEndTimer = null;
+    this.ffmpegCommand = null;
+    
+    // Feature flags
+    this.USE_STREAMING_PIPELINE = process.env.ENABLE_SPECULATIVE_TTS === 'true';
     
     // DEBUG: Log orchestrator initialization
     logger.info('🎬 [DEBUG] WebSocketOrchestrator initialized', {
@@ -73,7 +80,8 @@ class WebSocketOrchestrator extends EventEmitter {
       config: {
         speechEndTimeout: this.SPEECH_END_TIMEOUT,
         minTimeBetweenResponses: this.MIN_TIME_BETWEEN_RESPONSES,
-        bargeInCooldown: this.BARGE_IN_COOLDOWN
+        bargeInCooldown: this.BARGE_IN_COOLDOWN,
+        speculativeTTS: this.USE_STREAMING_PIPELINE
       }
     });
   }
@@ -368,36 +376,55 @@ class WebSocketOrchestrator extends EventEmitter {
    * Handles when user starts speaking
    */
   handleSpeechStarted() {
-    const previousUserSpeaking = this.isUserSpeaking;
-    this.isUserSpeaking = true;
+    const now = Date.now();
     
-    logger.info('🎤 [DEBUG] User speech started', {
-      callSid: this.callSid,
-      timestamp: new Date().toISOString(),
-      timestampMs: Date.now(),
-      previousUserSpeaking,
-      agentCurrentlySpeaking: this.isSpeaking,
-      callState: this.callState,
-      willTriggerBargeIn: this.isSpeaking
-    });
-    
+    // Skip if in barge-in cooldown
+    if (this.isBargeInCooldown) {
+      logger.info('🔇 [Speech] Ignoring speech start - in barge-in cooldown', { callSid: this.callSid });
+      return;
+    }
+
     // Implement barge-in: stop current TTS if agent is speaking
     if (this.isSpeaking) {
+      // Check if we're within the grace period after starting to speak
+      const timeSinceSpeechStart = now - this.audioDeliveryMetrics.startTime;
+      if (timeSinceSpeechStart < this.BARGE_IN_GRACE_PERIOD_MS) {
+        logger.info('🕐 [Speech] Ignoring speech start - within grace period', { 
+          callSid: this.callSid,
+          timeSinceSpeechStart,
+          gracePeriod: this.BARGE_IN_GRACE_PERIOD_MS
+        });
+        return;
+      }
+
       const correlationId = this.logStateTransition(this.callState, 'BARGE_IN_DETECTED', 'User interrupted agent speech');
       
-      logger.info('🛑 [Barge-in] User interrupted - stopping agent speech and starting cooldown', { 
+      logger.info('🛑 [Barge-in] User interrupted - stopping agent speech and starting cooldown', {
         callSid: this.callSid,
         correlationId,
-        agentWasSpeaking: this.lastAgentUtterance,
-        timeSinceAgentStarted: this.lastAgentUtteranceStartTime ? Date.now() - this.lastAgentUtteranceStartTime : null
+        agentWasSpeaking: this.lastSpokenText,
+        timeSinceAgentStarted: timeSinceSpeechStart
       });
-      
+
       this.stopFfmpeg();
+      this.stopStreaming(); // Stop streaming pipeline if active
       this.stopSpeaking();
       
       // Start a cooldown period to prevent immediate re-triggering
       this.isBargeInCooldown = true;
+      setTimeout(() => {
+        this.isBargeInCooldown = false;
+        logger.info('✅ [Barge-in] Cooldown period ended', { callSid: this.callSid });
+      }, this.BARGE_IN_COOLDOWN);
     }
+
+    // Reset speech end timer
+    if (this.speechEndTimer) {
+      clearTimeout(this.speechEndTimer);
+      this.speechEndTimer = null;
+    }
+
+    this.logStateTransition(this.callState, 'USER_SPEAKING', 'User started speaking');
   }
 
   /**
@@ -534,7 +561,7 @@ class WebSocketOrchestrator extends EventEmitter {
   }
   
   /**
-   * Processes user input with the LLM and streams the response back.
+   * Processes user input with streaming LLM and TTS pipeline
    */
   async processWithLLM(userInput) {
     if (!userInput.trim() || this.processingLLM) {
@@ -573,40 +600,50 @@ class WebSocketOrchestrator extends EventEmitter {
     });
     
     try {
-      const response = await conversationService.getResponse(userInput, this.callSid);
-      const llmEndTime = Date.now();
-      const llmProcessingTime = llmEndTime - llmStartTime;
-      
-      logger.info(`🧠 [LLM-OUTPUT] AI response: "${response.text}"`, { 
-        callSid: this.callSid,
-        responseId: this.currentResponseId,
-        correlationId,
-        timestamp: new Date().toISOString(),
-        timestampMs: llmEndTime,
-        processingTimeMs: llmProcessingTime,
-        shouldHangup: response.shouldHangup,
-        responseLength: response.text?.length || 0
-      });
-      
-      // Check for repetitive patterns before responding
-      const isRepetitive = this.detectRepetitivePattern(userInput, response.text);
-      
-      if (isRepetitive && this.identificationAttempts > 2) {
-        // Break the loop with a different approach
-        const breakLoopResponse = "I think we might be having some confusion here. I'm Duy, trying to reach my sister Zoey. If this isn't her phone, I'll just hang up.";
-        logger.info('🔄 [PATTERN] Breaking repetitive loop with clarification', {
+      if (this.USE_STREAMING_PIPELINE) {
+        logger.info('🚀 [STREAMING] Using speculative TTS pipeline', {
           callSid: this.callSid,
-          originalResponse: response.text.slice(0, 50),
-          breakResponse: breakLoopResponse
+          correlationId
         });
-        await this.streamToTTS(breakLoopResponse);
-      } else if (response.shouldHangup) {
-        this.logStateTransition(this.callState, 'HANGING_UP', 'LLM requested hangup', {
-          finalMessage: response.text
-        });
-        await this.handleHangup(response.text);
+        // Use streaming pipeline for real-time response
+        await this.streamLLMToTTS(userInput, correlationId, llmStartTime);
       } else {
-        await this.streamToTTS(response.text);
+        // Use legacy pipeline
+        const response = await conversationService.getResponse(userInput, this.callSid, this.userId);
+        const llmEndTime = Date.now();
+        const llmProcessingTime = llmEndTime - llmStartTime;
+        
+        logger.info(`🧠 [LLM-OUTPUT] AI response: "${response.text}"`, { 
+          callSid: this.callSid,
+          responseId: this.currentResponseId,
+          correlationId,
+          timestamp: new Date().toISOString(),
+          timestampMs: llmEndTime,
+          processingTimeMs: llmProcessingTime,
+          shouldHangup: response.shouldHangup,
+          responseLength: response.text?.length || 0
+        });
+        
+        // Check for repetitive patterns before responding
+        const isRepetitive = this.detectRepetitivePattern(userInput, response.text);
+        
+        if (isRepetitive && this.identificationAttempts > 2) {
+          // Break the loop with a different approach
+          const breakLoopResponse = "I understand there may be some confusion. This is Ben from Microsoft Support regarding a critical security issue on your computer. If you're not interested in protecting your data, I'll end this call.";
+          logger.info('🔄 [PATTERN] Breaking repetitive loop with clarification', {
+            callSid: this.callSid,
+            originalResponse: response.text.slice(0, 50),
+            breakResponse: breakLoopResponse
+          });
+          await this.streamToTTS(breakLoopResponse);
+        } else if (response.shouldHangup) {
+          this.logStateTransition(this.callState, 'HANGING_UP', 'LLM requested hangup', {
+            finalMessage: response.text
+          });
+          await this.handleHangup(response.text);
+        } else {
+          await this.streamToTTS(response.text);
+        }
       }
     } catch (error) {
       logger.error('❌ [LLM] Processing error', { 
@@ -643,7 +680,218 @@ class WebSocketOrchestrator extends EventEmitter {
   }
 
   /**
+   * Streams LLM output directly to TTS in real-time
+   */
+  async streamLLMToTTS(userInput, correlationId, startTime) {
+    const streamId = `stream-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+    
+    logger.info('🚀 [STREAMING] Starting real-time LLM → TTS pipeline', {
+      callSid: this.callSid,
+      streamId,
+      correlationId,
+      userInput: userInput.slice(0, 50)
+    });
+
+    let elevenLabsStream = null;
+    let ffmpegProcess = null;
+    let fullResponseText = '';
+    let shouldHangup = false;
+    let chunksReceived = 0;
+    let audioChunksSent = 0;
+    
+    try {
+      // Mark as speaking immediately
+      this.isSpeaking = true;
+      this.lastAgentUtterance = '[Streaming in progress...]';
+      this.lastAgentUtteranceStartTime = Date.now();
+      
+      // Create ElevenLabs streaming connection
+      elevenLabsStream = createElevenLabsStream();
+      await elevenLabsStream.connect();
+      
+      // Set up FFmpeg for real-time transcoding
+      const ffmpegInputStream = new PassThrough();
+      
+      ffmpegProcess = ffmpeg(ffmpegInputStream)
+        .inputFormat('mp3')
+        .audioCodec('pcm_mulaw')
+        .audioFrequency(8000)
+        .toFormat('mulaw')
+        .on('error', (err) => {
+          if (!err.message.includes('SIGKILL')) {
+            logger.error('❌ [STREAMING] FFmpeg error', {
+              streamId,
+              error: err.message
+            });
+          }
+        });
+      
+      const ffmpegOutputStream = ffmpegProcess.pipe();
+      
+      // Handle audio from ElevenLabs → FFmpeg → Twilio
+      elevenLabsStream.on('audio', (audioBuffer) => {
+        if (!this.isSpeaking || this.isUserSpeaking) {
+          logger.debug('🛑 [STREAMING] Dropping audio chunk due to interruption', { streamId });
+          return;
+        }
+        
+        // Write to FFmpeg for transcoding
+        ffmpegInputStream.write(audioBuffer);
+      });
+      
+      // Handle transcoded audio from FFmpeg → Twilio
+      ffmpegOutputStream.on('data', (chunk) => {
+        if (!this.isSpeaking || this.isUserSpeaking) {
+          return;
+        }
+        
+        audioChunksSent++;
+        
+        if (this.twilioWs?.readyState === WebSocket.OPEN) {
+          this.twilioWs.send(JSON.stringify({
+            event: 'media',
+            streamSid: this.streamSid,
+            media: { payload: chunk.toString('base64') }
+          }));
+          
+          if (audioChunksSent % 10 === 0) {
+            logger.debug('🔊 [STREAMING] Audio progress', {
+              streamId,
+              audioChunksSent,
+              textLength: fullResponseText.length
+            });
+          }
+        }
+      });
+      
+      // Get LLM response stream
+      const llmStream = conversationService.getResponseStream(userInput, this.callSid, this.userId);
+      
+      // Process LLM chunks and send to TTS
+      for await (const textChunk of llmStream) {
+        // Check for interruption
+        if (this.isUserSpeaking) {
+          logger.info('🛑 [STREAMING] User interrupted, stopping pipeline', {
+            streamId,
+            textGenerated: fullResponseText.length
+          });
+          break;
+        }
+        
+        // Skip special markers
+        if (textChunk === '\n[CORRECTION]\n') {
+          logger.warn('⚠️ [STREAMING] Correction marker detected', { streamId });
+          fullResponseText = ''; // Reset for corrected version
+          continue;
+        }
+        
+        chunksReceived++;
+        fullResponseText += textChunk;
+        
+        // Send to ElevenLabs
+        elevenLabsStream.sendText(textChunk);
+        
+        // Update last utterance for debugging
+        this.lastAgentUtterance = fullResponseText;
+        
+        // Log progress
+        if (chunksReceived % 5 === 0) {
+          logger.debug('📝 [STREAMING] Text generation progress', {
+            streamId,
+            chunksReceived,
+            currentLength: fullResponseText.length,
+            preview: fullResponseText.slice(-50)
+          });
+        }
+      }
+      
+      // Signal end of text to ElevenLabs
+      elevenLabsStream.sendText('', true);
+      
+      // Wait for ElevenLabs to finish
+      await new Promise((resolve) => {
+        elevenLabsStream.once('end', resolve);
+        elevenLabsStream.once('close', resolve);
+        // Timeout after 5 seconds
+        setTimeout(resolve, 5000);
+      });
+      
+      // Close FFmpeg input to flush remaining audio
+      ffmpegInputStream.end();
+      
+      // Get metadata if available
+      if (llmStream.metadata) {
+        fullResponseText = llmStream.metadata.fullResponse || fullResponseText;
+        shouldHangup = llmStream.metadata.shouldHangup || false;
+      }
+      
+      const endTime = Date.now();
+      
+      logger.info('✅ [STREAMING] Pipeline completed', {
+        callSid: this.callSid,
+        streamId,
+        correlationId,
+        totalTimeMs: endTime - startTime,
+        responseLength: fullResponseText.length,
+        textChunks: chunksReceived,
+        audioChunks: audioChunksSent,
+        shouldHangup
+      });
+      
+      // Store complete utterance
+      this.lastAgentUtterance = fullResponseText;
+      this.lastAgentUtteranceEndTime = endTime;
+      
+      // Check for patterns and hangup
+      const isRepetitive = this.detectRepetitivePattern(userInput, fullResponseText);
+      
+      if (isRepetitive && this.identificationAttempts > 2) {
+        const breakLoopResponse = "I understand there may be some confusion. This is Ben from Microsoft Support regarding a critical security issue on your computer. If you're not interested in protecting your data, I'll end this call.";
+        logger.info('🔄 [STREAMING] Breaking repetitive loop', {
+          streamId,
+          originalResponse: fullResponseText.substring(0, 50)
+        });
+        // Use old TTS method for correction
+        await this.streamToTTS(breakLoopResponse);
+      } else if (shouldHangup) {
+        this.logStateTransition(this.callState, 'HANGING_UP', 'LLM requested hangup');
+        await this.handleHangup(fullResponseText);
+      }
+      
+    } catch (error) {
+      logger.error('❌ [STREAMING] Pipeline error', {
+        callSid: this.callSid,
+        streamId,
+        error: error.message,
+        stack: error.stack
+      });
+      
+      // Fallback to error message
+      await this.streamToTTS("I'm experiencing some technical difficulties. This is frustrating! Let me try to help you another way.");
+      
+    } finally {
+      // Cleanup
+      if (elevenLabsStream) {
+        elevenLabsStream.close();
+      }
+      
+      if (ffmpegProcess) {
+        ffmpegProcess.kill('SIGKILL');
+      }
+      
+      this.isSpeaking = false;
+      this.processingLLM = false;
+      
+      logger.info('🧹 [STREAMING] Cleanup completed', {
+        streamId,
+        finalResponseLength: fullResponseText.length
+      });
+    }
+  }
+
+  /**
    * Downloads audio from ElevenLabs, then transcodes and streams it to Twilio.
+   * (Legacy method - kept for fallback and non-streaming scenarios)
    */
   async streamToTTS(text) {
     const ttsStartTime = Date.now();
@@ -918,6 +1166,21 @@ class WebSocketOrchestrator extends EventEmitter {
       this.ffmpegCommand.kill('SIGKILL');
       this.ffmpegCommand = null;
     }
+  }
+  
+  /**
+   * Stop all streaming processes for barge-in
+   */
+  stopStreaming() {
+    // This will be handled by the streaming pipeline checking isUserSpeaking flag
+    logger.info('🛑 [STREAMING] Stopping all streaming processes', { 
+      callSid: this.callSid,
+      wasStreaming: this.isSpeaking
+    });
+    
+    // The streaming pipeline will detect the flag change and clean up
+    this.isUserSpeaking = true;
+    this.stopSpeaking();
   }
 
   /**

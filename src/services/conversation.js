@@ -253,8 +253,8 @@ const getResponse = async (userInput, callSid, userId) => {
       logger.info('User seems confused - NOT hanging up, will clarify', { 
         callSid, 
         userInput,
-        aiResponse: aiResponse.substring(0, 50) + '...',
-        lastAssistantMessage: lastAssistantMessage ? lastAssistantMessage.substring(0, 50) + '...' : 'none'
+        aiResponse: aiResponse.slice(0, 50) + '...',
+        lastAssistantMessage: lastAssistantMessage ? lastAssistantMessage.slice(0, 50) + '...' : 'none'
       });
     }
 
@@ -289,6 +289,174 @@ const getInitialGreeting = (contact) => {
 };
 
 /**
+ * Get AI response as a stream for real-time generation
+ * @param {string} userInput - Transcribed user speech
+ * @param {string} callSid - Twilio Call SID
+ * @param {string} userId - User ID (optional, will be looked up if not provided)
+ * @returns {Promise<AsyncGenerator>} - Async generator yielding text chunks
+ */
+const getResponseStream = async function* (userInput, callSid, userId) {
+  if (!userId) {
+    const callSidKey = getCallSidKey(callSid);
+    userId = await redis.get(callSidKey);
+  }
+
+  if (!userId) {
+    logger.error('[getResponseStream] CRITICAL: No user ID mapping found for callSid. Cannot proceed.', { callSid });
+    yield "Sorry, I'm having some technical issues right now. This is so frustrating! Let me try to fix this quickly.";
+    return;
+  }
+  
+  const contact = await userRepository.findUser({ id: userId });
+  
+  try {
+    const conversationHistory = await cacheService.getConversation(userId);
+    
+    // --- Intent Classification and Contextual System Messages ---
+    const userIntent = classifyUserIntent(userInput, conversationHistory);
+    const lastAssistantMessage = conversationHistory.filter(m => m.role === 'assistant').pop()?.content;
+    const contextualizedHistory = [...conversationHistory];
+    const userTurn = { role: 'user', content: userInput };
+    contextualizedHistory.push(userTurn);
+
+    // Add context messages (same as getResponse)
+    if (userIntent.isConfusion && lastAssistantMessage) {
+      if (userIntent.requiresRepetition) {
+        contextualizedHistory.push({
+          role: 'system',
+          content: `The user didn't hear you. Your last message was: "${lastAssistantMessage}". Repeat it with more urgency.`
+        });
+      } else if (userIntent.requiresClarification) {
+        contextualizedHistory.push({
+          role: 'system',
+          content: `The user is confused. Reassure them you are from Microsoft Support and that their computer is in danger. Be firm and serious.`
+        });
+      } else if (userIntent.confusionType === 'simple_what') {
+        contextualizedHistory.push({
+          role: 'system',
+          content: `The user said "${userInput}". Your last message was: "${lastAssistantMessage}". Repeat it more clearly and with more urgency.`
+        });
+      }
+    }
+    
+    // Handle scam-related responses
+    if (userIntent.isScamResponse) {
+      if (userIntent.isFallingForIt) {
+        contextualizedHistory.push({
+          role: 'system',
+          content: `The user is agreeing with you. Reinforce the danger and the need for the firewall.`
+        });
+      } else if (userIntent.wantsToPay) {
+        contextualizedHistory.push({
+          role: 'system',
+          content: `The user is asking about payment. This is good. Proceed to ask for their credit card information to purchase the firewall.`
+        });
+      } else {
+        contextualizedHistory.push({
+          role: 'system',
+          content: `The user is denying the problem. Be firm, insist that your servers have detected a virus, and that they are in great danger.`
+        });
+      }
+    }
+    
+    const messages = await promptUtils.generatePersonalizedPrompt(contact, contextualizedHistory, userId);
+    
+    logger.info('🧠 [LLM-STREAM-INPUT] Starting streaming response', { 
+      callSid, 
+      userId,
+      userInput: userInput,
+      inputLength: userInput.length,
+      conversationTurns: conversationHistory.length
+    });
+    
+    // --- OpenAI Streaming API Call ---
+    const stream = await openai.chat.completions.create({
+      model: aiConfig.openAI.model,
+      messages: messages,
+      temperature: aiConfig.openAI.temperature,
+      max_tokens: aiConfig.openAI.maxTokens,
+      stream: true // Enable streaming
+    });
+    
+    let fullResponse = '';
+    let tokenCount = 0;
+    
+    // Iterate through the stream
+    for await (const chunk of stream) {
+      const content = chunk.choices[0]?.delta?.content || '';
+      if (content) {
+        fullResponse += content;
+        tokenCount++;
+        
+        // Yield each chunk as it arrives
+        yield content;
+        
+        // Log progress periodically
+        if (tokenCount % 10 === 0) {
+          logger.debug('🧠 [LLM-STREAM] Streaming progress', {
+            callSid,
+            userId,
+            tokensGenerated: tokenCount,
+            currentLength: fullResponse.length
+          });
+        }
+      }
+    }
+    
+    // Validate the complete response
+    const validatedResponse = validateAndFixResponse(fullResponse, userIntent, conversationHistory);
+    
+    // If validation changed the response, yield the correction
+    if (validatedResponse !== fullResponse) {
+      logger.warn('⚠️ [VALIDATION] Response was corrected during streaming', {
+        callSid,
+        original: fullResponse.slice(0, 50),
+        corrected: validatedResponse.slice(0, 50)
+      });
+      // Clear and send corrected version
+      yield '\n[CORRECTION]\n';
+      yield validatedResponse;
+      fullResponse = validatedResponse;
+    }
+    
+    logger.info('🧠 [LLM-STREAM-OUTPUT] Streaming completed', {
+      callSid,
+      userId,
+      responseLength: fullResponse.length,
+      totalTokens: tokenCount
+    });
+    
+    // Update conversation history with complete response
+    const assistantTurn = { role: 'assistant', content: fullResponse };
+    await cacheService.appendConversation(userId, userTurn);
+    await cacheService.appendConversation(userId, assistantTurn);
+    
+    // Cache the complete response
+    await cacheService.setCachedResponse(userInput, conversationHistory, fullResponse);
+    
+    // Return metadata about hangup detection
+    const shouldHangup = fullResponse.toLowerCase().includes('goodbye') || 
+                        fullResponse.toLowerCase().includes('have a great day');
+    
+    // Store metadata for orchestrator to use
+    stream.metadata = { 
+      fullResponse, 
+      shouldHangup,
+      userIntent 
+    };
+    
+  } catch (error) {
+    logger.error('[getResponseStream] Error in streaming AI response', { 
+      callSid, 
+      userId, 
+      error: error.message, 
+      stack: error.stack 
+    });
+    yield "Ugh, I'm having some technical difficulties! This is so annoying. I'll get someone to follow up with you soon!";
+  }
+};
+
+/**
  * Clear conversation history for a call
  * @param {string} callSid - Twilio Call SID
  */
@@ -319,7 +487,7 @@ const validateAndFixResponse = (response, userIntent, conversationHistory) => {
   if (conversationHistory.length < 4) { // Early in conversation
     if (!/microsoft|support|virus|computer/i.test(lowerResponse)) {
       logger.warn('⚠️ [VALIDATION] AI response is off-character early in the conversation', {
-        originalResponse: response.substring(0, 50)
+        originalResponse: response.slice(0, 50)
       });
       return "Hello, this is Ben from Microsoft Support. We have detected a virus on your computer.";
     }
@@ -337,6 +505,7 @@ module.exports = {
   getUserIdByCallSid,
   initializeConversation,
   getResponse,
+  getResponseStream,
   getInitialGreeting,
   clearConversation
 };

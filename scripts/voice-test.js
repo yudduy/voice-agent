@@ -115,13 +115,14 @@ class VoiceTest {
   async setupNgrok() {
     logger.info('Checking if main app server is running...');
     
-    // Check if server is running on port 3000
+    // Check if server is running on configured port
     const axios = require('axios');
+    const port = process.env.PORT || 3000;
     try {
-      await axios.get('http://localhost:3000/health');
-      logger.info('✓ Main app server is running on port 3000');
+      await axios.get(`http://localhost:${port}/health`);
+      logger.info(`✓ Main app server is running on port ${port}`);
     } catch (error) {
-      throw new Error('Main app server is not running. Please start with: npm start');
+      throw new Error(`Main app server is not running on port ${port}. Please start with: npm start`);
     }
     
     // Use existing ngrok URL from .env
