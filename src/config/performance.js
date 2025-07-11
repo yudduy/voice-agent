@@ -4,7 +4,7 @@ const performanceConfig = {
     defaultApi: parseInt(process.env.DEFAULT_API_TIMEOUT_MS, 10) || 5000,
     groqSTT: parseInt(process.env.GROQ_STT_TIMEOUT_MS, 10) || 10000,
     openAI: parseInt(process.env.OPENAI_TIMEOUT_MS, 10) || 30000,
-    elevenLabsTTS: parseInt(process.env.ELEVENLABS_TTS_TIMEOUT_MS, 10) || 15000,
+    elevenLabsTTS: parseInt(process.env.ELEVENLABS_TTS_TIMEOUT_MS, 10) || 45000,
     twilioWebhook: parseInt(process.env.TWILIO_WEBHOOK_TIMEOUT_MS, 10) || 10000,
   },
 

@@ -123,15 +123,11 @@ const FEATURES = {
 
 /**
  * Processing mode selector based on enabled features
+ * CRITICAL FIX: Force STANDARD mode to prevent audio interruption
  */
 const getProcessingMode = () => {
-  if (FEATURES.SPECULATIVE && FEATURES.BACKCHANNELS) {
-    return 'ADVANCED';
-  } else if (FEATURES.STREAMING) {
-    return 'STREAMING';
-  } else {
-    return 'STANDARD';
-  }
+  // FORCE standard mode to prevent streaming issues that cause audio cutoffs
+  return 'STANDARD';
 };
 
 /**
@@ -195,20 +191,56 @@ const processSTT = async (userInput, recordingUrl, confidence, callSid) => {
 };
 
 /**
- * Unified audio response generation
+ * Generate complete audio response with proper TwiML structure
  */
-const generateAudioResponse = async (response, content, options = {}) => {
-  if (!content) return;
+const generateAudioResponse = async (response, content, includeGather = true) => {
+  if (!content || typeof content !== 'string') return;
 
-  // Handle different content types
-  if (Array.isArray(content)) {
-    // Multiple audio items (streaming/backchannel case)
-    for (const item of content) {
-      await addSingleAudioItem(response, item, options);
+  logger.info('🔊 [COMPLETE-AUDIO] Generating complete response audio', {
+    textLength: content.length,
+    preview: content.substring(0, 100) + '...',
+    includeGather
+  });
+
+  // Generate complete audio file
+  const audioUrl = await textToSpeech.generateAudio(content);
+  
+  if (includeGather) {
+    // Use Gather with nested audio to ensure proper sequencing
+    const gather = response.gather(createCleanGatherOptions());
+    
+    if (audioUrl) {
+      const fullUrl = `${process.env.BASE_URL}${audioUrl}`;
+      logger.info('📺 [TWIML-GATHER-PLAY] Playing audio within Gather', { audioUrl: fullUrl });
+      gather.play(fullUrl);
+    } else {
+      logger.info('📺 [TWIML-GATHER-SAY] Using Twilio TTS within Gather', { text: content });
+      gather.say({
+        voice: telephonyConfig.voice,
+        language: telephonyConfig.language
+      }, content);
     }
+    
+    // Fallback after gather timeout
+    response.say({
+      voice: telephonyConfig.voice,
+      language: telephonyConfig.language
+    }, "I'm still here. Please let me know how I can help you.");
+    response.hangup();
+    
   } else {
-    // Single content item
-    await addSingleAudioItem(response, content, options);
+    // Just play audio without gather (for hangup scenarios)
+    if (audioUrl) {
+      const fullUrl = `${process.env.BASE_URL}${audioUrl}`;
+      logger.info('📺 [TWIML-PLAY] Playing complete response', { audioUrl: fullUrl });
+      response.play(fullUrl);
+    } else {
+      logger.info('📺 [TWIML-SAY] Using Twilio TTS for complete response', { text: content });
+      response.say({
+        voice: telephonyConfig.voice,
+        language: telephonyConfig.language
+      }, content);
+    }
   }
 };
 
@@ -220,6 +252,11 @@ const addSingleAudioItem = async (response, item, options = {}) => {
     // Plain text - generate TTS or use Twilio fallback
     if (item.startsWith('twilio:')) {
       const text = item.replace('twilio:', '');
+      logger.info('📺 [TWIML-SAY] Adding Twilio <Say> to response', {
+        text: text,
+        voice: telephonyConfig.voice,
+        language: telephonyConfig.language
+      });
       response.say({
         voice: telephonyConfig.voice,
         language: telephonyConfig.language
@@ -228,10 +265,18 @@ const addSingleAudioItem = async (response, item, options = {}) => {
       // Generate audio with TTS
       const audioUrl = await textToSpeech.generateAudio(item);
       if (audioUrl) {
-        const fullUrl = `${process.env.WEBHOOK_BASE_URL}${audioUrl}`;
+        const fullUrl = `${process.env.BASE_URL}${audioUrl}`;
+        logger.info('📺 [TWIML-PLAY] Adding <Play> to response', {
+          audioUrl: fullUrl,
+          originalText: item.substring(0, 100) + '...'
+        });
         response.play(fullUrl);
       } else {
         // Ultimate fallback
+        logger.info('📺 [TWIML-SAY] TTS failed, using Twilio <Say> fallback', {
+          text: item,
+          voice: telephonyConfig.voice
+        });
         response.say({
           voice: telephonyConfig.voice,
           language: telephonyConfig.language
@@ -242,12 +287,19 @@ const addSingleAudioItem = async (response, item, options = {}) => {
     // Audio URL object
     if (item.audioUrl.startsWith('twilio:')) {
       const text = item.audioUrl.replace('twilio:', '');
+      logger.info('📺 [TWIML-SAY] Adding Twilio <Say> from object', {
+        text: text,
+        voice: telephonyConfig.voice
+      });
       response.say({
         voice: telephonyConfig.voice,
         language: telephonyConfig.language
       }, text);
     } else {
-      const fullUrl = `${process.env.WEBHOOK_BASE_URL}${item.audioUrl}`;
+      const fullUrl = `${process.env.BASE_URL}${item.audioUrl}`;
+      logger.info('📺 [TWIML-PLAY] Adding <Play> from object', {
+        audioUrl: fullUrl
+      });
       response.play(fullUrl);
     }
   }
@@ -255,28 +307,21 @@ const addSingleAudioItem = async (response, item, options = {}) => {
 
 /**
  * Create appropriate conversation handler based on processing mode
+ * CRITICAL FIX: Always use standard conversation service
  */
 const createConversationHandler = async (callSid, userId, processingMode) => {
-  switch (processingMode) {
-    case 'ADVANCED':
-    case 'STREAMING':
-      return createStreamingHandler(userId, callSid);
-    
-    case 'STANDARD':
-    default:
-      // Use standard conversation service
+  // ALWAYS use standard conversation service to prevent audio interruption
+  return {
+    processInput: async (input) => {
+      const result = await conversationService.getResponse(input, callSid);
       return {
-        processInput: async (input) => {
-          const result = await conversationService.getResponse(input, callSid);
-          return {
-            fullResponse: result.text,
-            shouldHangup: result.shouldHangup,
-            mode: 'standard'
-          };
-        },
-        cleanup: () => {}
+        fullResponse: result.text,
+        shouldHangup: result.shouldHangup,
+        mode: 'standard'
       };
-  }
+    },
+    cleanup: () => {}
+  };
 };
 
 /**
@@ -302,15 +347,15 @@ router.post('/connect', async (req, res) => {
     logger.info('[Unified /connect] Initializing conversation', { callSid, userId: user.id });
     await conversationService.initializeConversation(callSid, { _id: user.id });
 
-    // Generate personalized greeting using ElevenLabs TTS
-    const greetingText = user.name ? 
-      `Hello ${user.name}! How can I help you today?` : 
-      "Hello! How can I help you today?";
+    // Generate concise greeting using ElevenLabs TTS
+    const greetingText = user.name && user.name !== 'Guest User' ? 
+      `Hi ${user.name}, this is an AI assistant calling. Is now a good time to chat?` : 
+      "Hi, this is an AI assistant calling. Is now a good time to chat?";
 
     // Play greeting first
     const audioUrl = await textToSpeech.generateAudio(greetingText);
     if (audioUrl) {
-      const fullUrl = `${process.env.WEBHOOK_BASE_URL}${audioUrl}`;
+      const fullUrl = `${process.env.BASE_URL}${audioUrl}`;
       response.play(fullUrl);
     } else {
       // Fallback to Twilio TTS
@@ -320,35 +365,19 @@ router.post('/connect', async (req, res) => {
       }, greetingText);
     }
 
-    // Choose recording method based on STT preference
-    if (aiConfig.speechPreferences.enableRecording && 
-        aiConfig.speechPreferences.sttPreference === 'groq') {
-      logger.info('[Unified /connect] Using Groq STT with recording', { callSid });
-      
-      // Use Record verb for Groq STT
-      const recordOptions = createCleanRecordOptions();
-      
-      // Log what we're about to create
-      logger.debug('[Unified /connect] Creating Record verb with options', { 
-        callSid, 
-        recordOptions 
-      });
-      
-      response.record(recordOptions);
-    } else {
-      logger.info('[Unified /connect] Using Twilio STT with Gather', { callSid });
-      
-      // Use Gather for Twilio STT
-      const gatherOptions = createCleanGatherOptions();
-      
-      // Log what we're about to create
-      logger.debug('[Unified /connect] Creating Gather verb with options', { 
-        callSid, 
-        gatherOptions 
-      });
-      
-      response.gather(gatherOptions);
-    }
+    // CRITICAL FIX: Always use Twilio STT with Gather - no recording
+    logger.info('[Unified /connect] Using Twilio STT with Gather (no recording)', { callSid });
+    
+    // Use Gather for reliable Twilio STT
+    const gatherOptions = createCleanGatherOptions();
+    
+    // Log what we're about to create
+    logger.debug('[Unified /connect] Creating Gather verb with options', { 
+      callSid, 
+      gatherOptions 
+    });
+    
+    response.gather(gatherOptions);
 
     // Add a fallback if no input is received
     response.say({
@@ -363,7 +392,8 @@ router.post('/connect', async (req, res) => {
       callSid, 
       userId: user.id, 
       usedElevenLabs: !!audioUrl,
-      usingGroqSTT: aiConfig.speechPreferences.sttPreference === 'groq' && aiConfig.speechPreferences.enableRecording
+      sttMode: 'twilio-gather',
+      recordingDisabled: true
     });
 
     const twimlString = response.toString();
@@ -473,37 +503,51 @@ router.post('/process-recording', async (req, res) => {
       return res.type('text/xml').send(response.toString());
     }
 
-    // Process input based on mode
+    // Process input based on mode - SIMPLIFIED FOR COMPLETE RESPONSE  
     let result;
-    if (processingMode === 'ADVANCED' && handler.processCompleteInput) {
-      result = await handler.processCompleteInput(processedInput, 1.0);
-    } else if (processingMode === 'STREAMING' && handler.processStreamingResponse) {
-      result = await handler.processStreamingResponse(processedInput);
-    } else {
-      result = await handler.processInput(processedInput);
-    }
+    // CRITICAL FIX: Force standard mode only - no streaming/advanced processing
+    result = await handler.processInput(processedInput);
 
-    // Generate audio response
-    const audioContent = result.audioUrls || result.fullResponse;
-    if (audioContent) {
-      await generateAudioResponse(response, audioContent);
-    }
-
-    // Handle conversation end
-    if (result.shouldHangup) {
-      logger.info('[Unified /process-recording] Conversation ended', { callSid });
+    // Generate COMPLETE audio response with proper TwiML structure
+    const audioContent = result.fullResponse; // Use complete text only
+    if (audioContent && typeof audioContent === 'string') {
+      if (result.shouldHangup) {
+        // Play final message without gather
+        await generateAudioResponse(response, audioContent, false);
+        response.hangup();
+        
+        // Cleanup handler
+        if (handler.cleanup) {
+          handler.cleanup();
+        }
+        activeHandlers.delete(callSid);
+      } else {
+        // Play response then continue with recording
+        await generateAudioResponse(response, audioContent, false);
+        
+        // Continue conversation with new recording after audio completes
+        response.record(createCleanRecordOptions());
+        
+        // Add timeout fallback
+        response.say({
+          voice: telephonyConfig.voice,
+          language: telephonyConfig.language
+        }, "I'm still here. Please let me know how I can help you.");
+        
+        response.hangup();
+      }
+    } else if (result.shouldHangup) {
+      // No content but should hangup
       response.hangup();
       
-      // Cleanup handler
       if (handler.cleanup) {
         handler.cleanup();
       }
       activeHandlers.delete(callSid);
     } else {
-      // Continue conversation with new recording
+      // No content, continue with recording
       response.record(createCleanRecordOptions());
       
-      // Add timeout fallback
       response.say({
         voice: telephonyConfig.voice,
         language: telephonyConfig.language
@@ -684,47 +728,46 @@ router.post('/respond', async (req, res) => {
       return res.type('text/xml').send(response.toString());
     }
 
-    // Process input based on mode
+    // Process input based on mode - SIMPLIFIED FOR COMPLETE RESPONSE
     let result;
-    if (processingMode === 'ADVANCED' && handler.processCompleteInput) {
-      // Advanced mode with speculation/backchannels
-      result = await handler.processCompleteInput(processedInput, parseFloat(twilioConfidence) || 0.8);
-    } else if (processingMode === 'STREAMING' && handler.processStreamingResponse) {
-      // Streaming mode
-      result = await handler.processStreamingResponse(processedInput);
-    } else {
-      // Standard mode
-      result = await handler.processInput(processedInput);
-    }
+    // CRITICAL FIX: Force standard mode only - no streaming/advanced processing
+    result = await handler.processInput(processedInput);
 
-    // Generate audio response
-    const audioContent = result.audioUrls || result.fullResponse;
-    if (audioContent) {
-      await generateAudioResponse(response, audioContent);
-    }
-
-    // Handle conversation end
-    if (result.shouldHangup) {
-      logger.info('[Unified /respond] Conversation ended', { callSid });
+    // Generate COMPLETE audio response with proper TwiML structure
+    const audioContent = result.fullResponse; // Use complete text only
+    if (audioContent && typeof audioContent === 'string') {
+      if (result.shouldHangup) {
+        // Play final message without gather
+        await generateAudioResponse(response, audioContent, false);
+        response.hangup();
+        
+        // Cleanup handler
+        if (handler.cleanup) {
+          handler.cleanup();
+        }
+        activeHandlers.delete(callSid);
+      } else {
+        // Play response with gather for next input - audio plays first, then listens
+        await generateAudioResponse(response, audioContent, true);
+        
+        // No additional TwiML needed - generateAudioResponse handles the complete flow
+      }
+    } else if (result.shouldHangup) {
+      // No content but should hangup
       response.hangup();
       
-      // Cleanup handler
       if (handler.cleanup) {
         handler.cleanup();
       }
       activeHandlers.delete(callSid);
     } else {
-      // Continue conversation with proper timing
-      // Add gather for next user input - but don't nest it inside the response audio
+      // No content, add empty gather
       response.gather(createCleanGatherOptions());
-      
-      // Add fallback if no response
       response.say({
         voice: telephonyConfig.voice,
         language: telephonyConfig.language
       }, "I'm still here. Please let me know how I can help you.");
-      
-      response.hangup(); // End call if still no response
+      response.hangup();
     }
 
     // Log performance metrics

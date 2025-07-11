@@ -9,7 +9,6 @@ const logger = require('../utils/logger');
 const cacheService = require('./cacheService');
 const redis = require('../config/redis'); // Direct redis access for callSid mapping
 const userRepository = require('../repositories/userRepository');
-const TopicTracker = require('./topicTracker');
 
 // Initialize OpenAI client
 const openai = new OpenAI({
@@ -90,6 +89,14 @@ const getResponse = async (userInput, callSid) => {
     // --- Generate Prompt ---
     const messages = await promptUtils.generatePersonalizedPrompt(contact, conversationHistory, userId);
     
+    logger.info('🧠 [LLM-INPUT] User said', { 
+      callSid, 
+      userId,
+      userInput: userInput,
+      inputLength: userInput.length,
+      conversationTurns: conversationHistory.length
+    });
+    
     logger.debug('[getResponse] Calling OpenAI API', { 
       callSid, 
       userId, 
@@ -109,18 +116,14 @@ const getResponse = async (userInput, callSid) => {
     const aiResponse = completion.choices[0].message.content.trim();
     const assistantTurn = { role: 'assistant', content: aiResponse };
 
-    logger.debug('[getResponse] OpenAI API response received', {
+    logger.info('🧠 [LLM-OUTPUT] AI generated', {
       callSid,
       userId,
+      aiResponse: aiResponse,
       responseLength: aiResponse.length,
       tokensUsed: completion.usage?.total_tokens || 'unknown'
     });
 
-    // --- Topic Tracking ---
-    const topicMatch = /<topic:(\w+)>/i.exec(aiResponse);
-    if (topicMatch) {
-      await TopicTracker.markCovered(userId, topicMatch[1]);
-    }
 
     // --- Hangup Detection ---
     let shouldHangup = false;

@@ -51,8 +51,12 @@ const transcribeWithGroq = async (audioUrl) => {
       method: 'get',
       url: audioUrl,
       responseType: 'stream',
-      // Add Twilio Auth if accessing protected recordings (optional)
-      // auth: { username: twilioConfig.accountSid, password: twilioConfig.authToken }
+      // Add Twilio Auth for accessing protected recordings
+      auth: { 
+        username: process.env.TWILIO_ACCOUNT_SID, 
+        password: process.env.TWILIO_AUTH_TOKEN 
+      },
+      timeout: 30000 // 30 second timeout
     });
 
     // Create a temporary file path
@@ -82,15 +86,29 @@ const transcribeWithGroq = async (audioUrl) => {
       // temperature: 0, // Optional: control randomness
     });
 
-    logger.info('Groq transcription successful', { textLength: transcription.text?.length });
+    logger.info('🎤 [STT-SUCCESS] Groq transcription successful', { 
+      transcribedText: transcription.text,
+      textLength: transcription.text?.length,
+      provider: 'groq-whisper'
+    });
     return transcription.text; // Return the transcribed text
 
   } catch (error) {
-    // Log specific Groq API errors if possible
-    logger.error('Error during Groq transcription process', {
-      error: error.response ? { status: error.response.status, data: error.response.data } : error.message,
-      errorCode: error.code, // Groq SDK might provide specific error codes
-      audioUrl
+    // Log specific Groq API errors if possible - FIX CIRCULAR REFERENCE ISSUE
+    const errorInfo = {};
+    if (error.response) {
+      errorInfo.status = error.response.status;
+      errorInfo.statusText = error.response.statusText;
+      errorInfo.data = error.response.data;
+    } else {
+      errorInfo.message = error.message;
+      errorInfo.code = error.code;
+      errorInfo.name = error.name;
+    }
+    
+    logger.error('🎤 [STT-ERROR] Groq transcription failed', {
+      error: errorInfo,
+      audioUrl: audioUrl ? audioUrl.substring(0, 100) + '...' : 'null'
     });
     return null;
   } finally {
@@ -114,6 +132,15 @@ const transcribeWithGroq = async (audioUrl) => {
  */
 const processTwilioSpeechResult = (speechResult) => {
   const processedText = speechResult ? speechResult.trim() : '';
+  
+  if (processedText) {
+    logger.info('🎤 [STT-SUCCESS] Twilio speech recognized', {
+      transcribedText: processedText,
+      textLength: processedText.length,
+      provider: 'twilio'
+    });
+  }
+  
   return processedText;
 };
 

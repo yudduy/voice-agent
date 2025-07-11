@@ -4,104 +4,128 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-VERIES Caller is a sophisticated voice AI calling agent that places outbound phone calls and has natural conversations. It uses a production-ready voice pipeline: Groq Whisper STT → OpenAI GPT-4o-mini → ElevenLabs TTS, with comprehensive fallback systems.
+**VERIES Caller** is a sophisticated voice AI calling agent that places outbound phone calls and has natural conversations using a production-ready voice pipeline:
 
-**🚀 IMPLEMENTATION STATUS**: The system has comprehensive streaming pipeline infrastructure built and ready, including speculative execution, backchannels, and WebRTC support. The current production webhook still uses sequential processing, but streaming components are fully implemented and can be activated via configuration.
+**Pipeline**: Groq distil-whisper STT → OpenAI GPT-4.1-nano → ElevenLabs Flash v2.5
 
-## Key Commands
+**🎯 Current Status**: Production-ready with sequential processing. Advanced streaming components are fully implemented but currently disabled to prevent audio cutoff issues.
+
+## Quick Start Commands
 
 ### Development
 ```bash
-npm run dev        # Start with nodemon (auto-reload)
+npm run dev        # Start with auto-reload
 npm start          # Production server
 npm test           # Run Jest tests
-npm run lint       # ESLint checks
 ```
 
-### Testing Voice Pipeline
+### Voice Pipeline Testing
 ```bash
-# Unified voice test (all modes) - VERIFIED WORKING
-node scripts/unified-voice-test.js +1234567890
+# Main voice test (recommended)
+node scripts/voice-test.js +1234567890
 
-# Test modes (VERIFIED SCRIPTS EXIST):
-node scripts/unified-voice-test.js +1234567890 --mode=basic           # Quick validation
-node scripts/unified-voice-test.js +1234567890 --mode=comprehensive  # Full testing (default)
-node scripts/unified-voice-test.js +1234567890 --mode=streaming      # Streaming pipeline
-node scripts/unified-voice-test.js +1234567890 --mode=advanced       # Advanced features
+# Setup test user first
+node scripts/setup-user.js +1234567890 "Test User"
 
-# Additional test scripts available:
-node scripts/advanced-voice-test.js +1234567890  # Advanced features test
-node scripts/database-test.js                    # Database connectivity test
-
-# Create test user account - VERIFIED WORKING
-node scripts/setup-user.js +1234567890 "John Doe"
+# Test database connectivity
+node scripts/database-test.js
 ```
 
-### Running Single Tests
+### Individual Tests
 ```bash
-# VERIFIED WORKING TEST FILES:
 npm test -- tests/services/conversation.test.js
-npm test -- tests/services/cacheService.test.js  
-npm test -- tests/services/smsHandler.test.js
-npm test -- tests/webhooks/smsWebhook.test.js
 npm test -- tests/repositories/userRepository.test.js
-npm test -- tests/repositories/historyRepository.test.js
-
-# Run tests matching pattern
-npm test -- --testNamePattern="should generate response"
-
-# Run with coverage
-npm test -- --coverage
+npm test -- --testNamePattern="specific test"
 ```
 
-## Architecture Overview
+## Architecture
 
-### Current Voice Pipeline Flow (Production)
-1. **Incoming Audio** → Twilio WebSocket → Groq Whisper v3 STT (with Twilio fallback)
-2. **Transcription** → OpenAI GPT-4o-mini (configured model) with context from Redis  
-3. **AI Response** → ElevenLabs TTS (with Hyperbolic + Twilio fallbacks)
-4. **Audio Output** → Twilio media stream → Caller
+### Voice Pipeline (Current Production)
+1. **Incoming Call** → Twilio → `/api/calls/connect` (greeting)
+2. **User Speech** → Twilio STT → `/api/calls/respond` 
+3. **AI Processing** → OpenAI GPT-4.1-nano → Redis context
+4. **Speech Synthesis** → ElevenLabs TTS → Audio playback
+5. **Loop** → Gather for next input
 
-### Streaming Pipeline Architecture (Available)
-The system includes fully implemented streaming components:
-- **StreamingVoiceHandler** (`services/streamingVoiceHandler.js`): Main coordinator for streaming pipeline
-- **TTSQueue** (`services/ttsQueue.js`): Prioritized, parallel TTS generation with sequential playback
-- **WebRTC Service** (`services/webrtcService.js`): Real-time audio streaming with VAD
-- **Speculative Engine** (`services/speculativeEngine.js`): Predictive processing capabilities
-- **Backchannel Manager** (`services/backchannelManager.js`): Natural conversation flow
+### Data Flow
+- **Supabase**: User profiles, call history, preferences
+- **Redis**: Real-time conversation state, call mappings
+- **Local Cache**: TTS audio files (`/public/tts-cache/`)
 
-### Data Architecture
-- **Supabase Postgres**: Long-term storage (users, call history, preferences, SMS history)
-- **Upstash Redis**: Real-time conversation state and call SID mappings
-- **Local TTS Cache**: `/public/tts-cache/` (auto-created, extensively used)
+### Active Components
+- **Webhooks**: `unifiedTwilioWebhooks.js` (single active handler)
+- **Services**: `conversation.js`, `speechToText.js`, `textToSpeech.js`
+- **Repositories**: `userRepository.js`, `historyRepository.js`
 
-### Core Services (VERIFIED IMPLEMENTATION)
-- `services/conversation.js`: AI conversation management with OpenAI integration
-- `services/speechToText.js`: Groq Whisper integration with Twilio fallback
-- `services/textToSpeech.js`: Multi-provider TTS (ElevenLabs → Hyperbolic → Twilio)
-- `services/caller.js`: Outbound call orchestration  
-- `services/cacheService.js`: Redis operations for conversation state
-- `services/streamingConversation.js`: Streaming LLM conversation handler
-- `services/pipelineCoordinator.js`: Coordinates multiple pipeline components
-- `services/topicTracker.js`: Conversation topic and context tracking
-- `services/smsHandler.js`: SMS message processing and onboarding
+## Key Files
 
-### Webhook Endpoints (VERIFIED)
-- `POST /api/calls/connect` - Initial call connection and greeting
-- `POST /api/calls/respond` - Main conversation webhook (sequential processing)  
-- `POST /api/calls/status` - Call status updates and cleanup
-- `POST /api/calls/recording` - Recording status callbacks
-- `POST /api/sms/incoming` - SMS message handling
+### Core Services
+- `src/services/conversation.js` - OpenAI conversation handling
+- `src/services/speechToText.js` - Groq STT with Twilio fallback
+- `src/services/textToSpeech.js` - ElevenLabs TTS with fallbacks
+- `src/services/caller.js` - Outbound call management
+- `src/services/cacheService.js` - Redis operations
 
-### Alternative Webhook Implementations Available:
-- `webhooks/streamingTwilioWebhooks.js`: Streaming pipeline webhook handlers
-- `webhooks/unifiedTwilioWebhooks.js`: Unified webhook with enhanced features
-- `webhooks/advancedTwilioWebhooks.js`: Advanced optimizations and backchannels
+### Configuration
+- `src/config/ai.js` - AI models and prompts **⚠️ CRITICAL: NO SSML**
+- `src/config/telephony.js` - Twilio settings
+- `src/config/supabase.js` - Database client
+- `src/config/redis.js` - Cache configuration
 
-## Important Patterns
+### Webhooks
+- `src/webhooks/unifiedTwilioWebhooks.js` - **ACTIVE** webhook handler
+- `src/webhooks/audioWebhooks.js` - Audio file serving
+- `src/webhooks/smsWebhook.js` - SMS handling
+
+## Environment Variables
+
+### Required
+```env
+# Twilio
+TWILIO_ACCOUNT_SID=your_sid
+TWILIO_AUTH_TOKEN=your_token
+TWILIO_PHONE_NUMBER=+1234567890
+
+# AI Services
+OPENAI_API_KEY=your_key
+GROQ_API_KEY=your_key
+ELEVENLABS_API_KEY=your_key
+
+# Database & Cache
+SUPABASE_URL=your_url
+SUPABASE_SERVICE_ROLE_KEY=your_key
+UPSTASH_REDIS_REST_URL=your_url
+UPSTASH_REDIS_REST_TOKEN=your_token
+
+# Webhooks
+WEBHOOK_BASE_URL=https://your-ngrok.ngrok-free.app
+```
+
+### Optional
+```env
+OPENAI_MODEL=gpt-4o-mini
+ELEVENLABS_VOICE_ID=EXAVITQu4vr4xnSDxMaL
+TTS_PREFERENCE=elevenlabs
+SPEECH_RECOGNITION_PREFERENCE=groq
+```
+
+## Critical Patterns
+
+### ⚠️ SSML Prevention
+**CRITICAL**: The AI must output PLAIN TEXT only. No SSML, XML, or special markup.
+
+```javascript
+// ✅ CORRECT
+"Hello! I can help you with that."
+
+// ❌ WRONG - CAUSES TWIML ERRORS
+"Hello! <break time='1s'/> I can help you with that."
+```
+
+### Phone Number Format
+Always use E.164 format: `+1234567890`
 
 ### Error Handling
-All services use consistent error handling with Winston logging:
 ```javascript
 try {
   // operation
@@ -111,33 +135,8 @@ try {
 }
 ```
 
-### Phone Number Format
-Always use E.164 format: `+1234567890` (not `(123) 456-7890`)
-
-### Testing Approach
-- Mock all external services (Twilio, OpenAI, etc.)
-- Use `jest.mock()` for service dependencies
-- Test files mirror source structure in `__tests__` folders
-
-### Environment Variables
-**Critical vars that must be set:**
-- `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_PHONE_NUMBER`
-- `OPENAI_API_KEY`, `GROQ_API_KEY`, `ELEVENLABS_API_KEY`
-- `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`
-- `UPSTASH_REDIS_REST_URL`, `UPSTASH_REDIS_REST_TOKEN`
-- `WEBHOOK_BASE_URL` or `BASE_URL` (public HTTPS URL for webhooks)
-
-**Optional optimization variables (with defaults):**
-- `ENABLE_STREAMING=true` - Enable streaming pipeline
-- `ENABLE_SPECULATIVE_EXECUTION=true` - Enable predictive processing
-- `ENABLE_BACKCHANNELS=true` - Enable natural conversation backchannels
-- `ENABLE_WEBRTC=true` - Enable WebRTC streaming
-- `TTS_PREFERENCE=elevenlabs` - Primary TTS provider
-- `SPEECH_RECOGNITION_PREFERENCE=groq` - Primary STT provider  
-- `OPENAI_MODEL=gpt-4o-mini` - AI model (already configured)
-
 ### Database Access
-Always use service role key for server operations:
+Always use service role key:
 ```javascript
 const supabase = createClient(
   process.env.SUPABASE_URL,
@@ -145,142 +144,100 @@ const supabase = createClient(
 );
 ```
 
-## Common Development Tasks
-
-### Adding New Voice Features
-1. Update `services/conversation.js` for AI behavior
-2. Modify system prompt in `generateResponse()` method
-3. Add tests in `__tests__/conversation.test.js`
-4. Test with `node scripts/unified-voice-test.js +1234567890`
+## Common Tasks
 
 ### Debugging Voice Calls
-1. Check `logs/combined.log` for full pipeline logs
-2. Voice metrics logged with `category: 'voice'`
-3. Use `ENABLE_RECORDING=true` for Groq STT debugging
-4. Monitor Redis for active conversation state
+1. Check `logs/combined.log` for pipeline details
+2. Monitor TwiML generation for validation errors
+3. Verify Redis conversation state
+4. Test with `node scripts/voice-test.js +1234567890`
 
-### Database Schema (VERIFIED IMPLEMENTATION)
-Tables have RLS enabled. Actual implemented tables in `supabase/migrations/0001_initial_schema.sql`:
-- `phone_links`: Phone → user mapping (E.164 format)
-- `preferences`: User-specific voice and application settings  
-- `call_history`: Complete call records with transcripts and metadata
-- `sms_history`: SMS interaction logging
-- `user_profiles`: Extended user data (if exists)
+### Adding Voice Features
+1. Update `src/services/conversation.js` for AI behavior
+2. Modify system prompt (ensure NO SSML)
+3. Test with voice pipeline script
+4. Add unit tests
 
-Note: Database uses Supabase auth.users as the primary user table.
+### Database Schema
+Tables in `supabase/migrations/0001_initial_schema.sql`:
+- `phone_links` - Phone to user mapping
+- `user_profiles` - User information
+- `call_history` - Call logs and transcripts
+- `preferences` - User settings
+- `sms_history` - SMS interactions
 
-### Performance Optimization
-- TTS audio cached locally to reduce API calls
-- Redis for fast conversation context access
-- Multiple provider fallbacks for reliability
-- Connection pooling for database queries
+## Advanced Features (Available but Disabled)
 
-## Voice Pipeline Implementation Status
+### Streaming Components (Fully Implemented)
+- `services/streamingConversation.js` - OpenAI streaming
+- `services/speculativeEngine.js` - Predictive processing
+- `services/backchannelManager.js` - Natural conversation flow
+- `services/ttsQueue.js` - Prioritized TTS generation
 
-### Current Performance Architecture
-- **Production Pipeline**: Sequential processing via `src/webhooks/twilioWebhooks.js`
-  - STT: Groq Whisper v3 → Twilio fallback
-  - LLM: OpenAI GPT-4o-mini (confirmed in config)
-  - TTS: ElevenLabs → Hyperbolic → Twilio fallbacks
-- **Performance**: Standard webhook latency (varies by network and API response times)
+### Why Currently Disabled
+The streaming pipeline was causing audio cutoff issues where responses would be interrupted mid-sentence. The system is configured to use sequential processing for reliability.
 
-### Available Streaming Infrastructure (FULLY IMPLEMENTED)
-
-The system includes complete streaming pipeline components that can be activated:
-
-#### Core Streaming Components
-- **`StreamingVoiceHandler`** (`src/services/streamingVoiceHandler.js`): Main coordinator with performance metrics
-- **`TTSQueue`** (`src/services/ttsQueue.js`): Prioritized parallel TTS with sequential playback  
-- **`StreamingConversation`** (`src/services/streamingConversation.js`): OpenAI streaming API integration
-- **`WebRTC Service`** (`src/services/webrtcService.js`): Real-time audio streaming with VAD
-- **`Speculative Engine`** (`src/services/speculativeEngine.js`): Predictive processing
-- **`Backchannel Manager`** (`src/services/backchannelManager.js`): Natural conversation flow
-
-#### Advanced Webhook Handlers Available
-- **`streamingTwilioWebhooks.js`**: Streaming pipeline implementation
-- **`unifiedTwilioWebhooks.js`**: Enhanced webhook with streaming support
-- **`advancedTwilioWebhooks.js`**: Full optimization features with backchannels
-
-#### Activation via Configuration
-Enable streaming features by setting environment variables:
-```bash
+### To Re-enable (when issues resolved)
+```env
 ENABLE_STREAMING=true
-ENABLE_SPECULATIVE_EXECUTION=true  
+ENABLE_SPECULATIVE_EXECUTION=true
 ENABLE_BACKCHANNELS=true
-ENABLE_WEBRTC=true
 ```
 
-### Performance Monitoring Infrastructure
+## Testing Strategy
 
-#### Voice Metrics (`src/utils/voiceMonitor.js`)
-```javascript
-// Current metrics tracked:
-{
-  ttsRequests: 0,     // Total TTS requests
-  ttsSuccess: 0,      // Successful generations
-  ttsFailed: 0,       // Failed generations  
-  cacheHits: 0,       // Cache hit rate
-  responseTimes: [],  // Response time history
-  audioSizes: []      // Audio file sizes
-}
-```
-
-#### Streaming Metrics (available in StreamingVoiceHandler)
-```javascript
-// Latency breakdown tracking:
-{
-  sttLatency: null,
-  llmFirstChunkLatency: null,
-  ttsFirstAudioLatency: null,
-  totalLatency: null,
-  perceivedLatency: null,  // Time to first audio
-  sentenceCount: 0,
-  audioChunks: 0
-}
-```
-
-### Testing Pipeline Variants
+### Voice Pipeline Test
 ```bash
-# Test current production pipeline
-node scripts/unified-voice-test.js +1234567890 --mode=basic
+# Complete end-to-end test
+node scripts/voice-test.js +1234567890
 
-# Test streaming implementation (if enabled)
-node scripts/unified-voice-test.js +1234567890 --mode=streaming
-
-# Test advanced optimization features  
-node scripts/unified-voice-test.js +1234567890 --mode=advanced
+# This test:
+# - Creates mock user in Supabase
+# - Places real Twilio call
+# - Tests STT → LLM → TTS pipeline
+# - Validates conversation state
+# - Monitors performance metrics
 ```
 
-### Performance Optimization Features
+### Component Tests
+```bash
+npm test -- tests/services/conversation.test.js  # AI responses
+npm test -- tests/services/textToSpeech.test.js  # TTS generation
+npm test -- tests/webhooks/                      # Webhook handlers
+```
 
-#### TTS Queue Management
-- **Priority Levels**: Backchannel (5) → Ultra-high (4) → High (3) → Normal (2) → Low (1)
-- **Parallel Generation**: Up to 3 concurrent TTS jobs
-- **Provider Fallbacks**: ElevenLabs → Hyperbolic → Twilio
-- **First Sentence Priority**: Ultra-high priority for immediate playback
+## Performance Monitoring
 
-#### AI Model Configuration
-- **Model**: GPT-4o-mini (optimized for speed and cost)
-- **Streaming Model**: GPT-4o-mini with streaming support
-- **Max Tokens**: 200 (standard), 120 (streaming)
-- **Temperature**: 0.3 for consistent responses
+### Voice Metrics
+- TTS generation times and cache hits
+- STT accuracy and latency
+- LLM response times
+- End-to-end call latency
 
-#### WebRTC Integration
-- **Providers**: Daily.co, LiveKit support
-- **Real-time Processing**: 100-200ms audio chunks
-- **VAD**: Voice Activity Detection for endpoint detection
-- **Buffer Management**: Smart audio buffering with pre/post-roll
+### Logs
+- `logs/combined.log` - All events
+- `logs/error.log` - Errors only
+- Voice pipeline events tagged with `category: 'voice'`
 
-### Current Limitations and Activation Path
+## Troubleshooting
 
-#### To Enable Streaming Pipeline:
-1. Set environment variables for streaming features
-2. Switch webhook endpoint to use `streamingTwilioWebhooks.js`
-3. Configure WebRTC provider (Daily.co or LiveKit)
-4. Test with streaming-specific test scripts
+### Common Issues
+1. **Audio Cutoff**: Check for SSML in AI responses
+2. **TwiML Validation**: Ensure clean XML generation
+3. **Environment Variables**: Verify all required keys set
+4. **Phone Format**: Use E.164 format (+1234567890)
+5. **Webhook Connectivity**: Ensure ngrok tunnel active
 
-#### Infrastructure Ready, Configuration Required:
-- All streaming components are implemented and tested
-- WebRTC service supports multiple providers
-- TTS queue handles prioritization and parallel processing
-- Comprehensive monitoring and metrics collection built-in
+### Debug Commands
+```bash
+# Test environment
+node scripts/voice-test.js
+
+# Check database
+node scripts/database-test.js
+
+# Monitor logs
+tail -f logs/combined.log
+```
+
+This documentation reflects the current stable production state focused on reliable voice conversations without streaming optimizations that were causing audio interruption issues.
