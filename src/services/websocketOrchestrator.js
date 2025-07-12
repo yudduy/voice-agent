@@ -8,13 +8,18 @@ const logger = require('../utils/logger');
 const { EventEmitter } = require('events');
 const conversationService = require('./conversation');
 const userRepository = require('../repositories/userRepository');
-const { Readable, PassThrough } = require('stream'); // Import Readable and PassThrough streams
+const { PassThrough } = require('stream');
 const ffmpeg = require('fluent-ffmpeg');
 const ffmpegPath = require('@ffmpeg-installer/ffmpeg').path;
 ffmpeg.setFfmpegPath(ffmpegPath);
-const axios = require('axios');
 const aiConfig = require('../config/ai');
 const { createElevenLabsStream } = require('./elevenLabsStream');
+const { featureFlags } = require('../config/featureFlags');
+const performanceMonitor = require('../utils/performanceMonitor');
+const connectionPool = require('./connectionPool');
+const ffmpegPool = require('./ffmpegPool');
+const audioCache = require('./audioCache');
+const textToSpeech = require('./textToSpeech');
 
 
 class WebSocketOrchestrator extends EventEmitter {
@@ -22,7 +27,10 @@ class WebSocketOrchestrator extends EventEmitter {
     super();
     this.callSid = callSid;
     // The userId is now passed in the 'start' message, so we initialize it as null.
-    this.userId = initialUserId; 
+    this.userId = initialUserId;
+    
+    // Start performance monitoring session
+    performanceMonitor.startSession(this.callSid); 
     
     this.twilioWs = null;
     this.deepgramWs = null;
@@ -68,6 +76,9 @@ class WebSocketOrchestrator extends EventEmitter {
     this.BARGE_IN_GRACE_PERIOD_MS = 400; // Grace period to prevent immediate barge-in
     this.speechEndTimer = null;
     this.ffmpegCommand = null;
+    
+    // KeepAlive management for Deepgram
+    this.keepAliveInterval = null;
     
     // Feature flags
     this.USE_STREAMING_PIPELINE = process.env.ENABLE_SPECULATIVE_TTS === 'true';
@@ -178,10 +189,16 @@ class WebSocketOrchestrator extends EventEmitter {
             break;
             
           case 'media':
-            // CRITICAL FIX: Decode the Base64 payload from Twilio before sending to Deepgram.
-            // Deepgram expects raw binary audio, not a Base64 string.
-            if (this.deepgramWs?.readyState === WebSocket.OPEN) {
+            // CRITICAL FIX: Do not process incoming audio while the agent is speaking.
+            // This prevents the agent from hearing its own echo and triggering a false barge-in.
+            if (this.deepgramWs?.readyState === WebSocket.OPEN && !this.isSpeaking) {
               const audioBuffer = Buffer.from(data.media.payload, 'base64');
+              
+              // Stop KeepAlive when we start receiving actual audio
+              if (this.keepAliveInterval) {
+                this._stopKeepAlive();
+              }
+              
               this.deepgramWs.send(audioBuffer);
               
               // Log audio data flow (sampled to avoid spam)
@@ -249,14 +266,50 @@ class WebSocketOrchestrator extends EventEmitter {
    * Connects to Deepgram for real-time transcription.
    */
   async connectToDeepgram() {
+    performanceMonitor.stageStart(this.callSid, 'deepgram-connect');
+    
+    try {
+      if (featureFlags.ENABLE_WEBSOCKET_POOLING) {
+        // Use connection pool
+        const pooledConnection = await connectionPool.getDeepgramConnection();
+        if (pooledConnection) {
+          this.deepgramWs = pooledConnection.connection;
+          logger.info('Using pooled Deepgram connection', { 
+            callSid: this.callSid,
+            connectionId: pooledConnection.id 
+          });
+          // Setup event handlers for pooled connection
+          this.setupDeepgramEventHandlers();
+          // Start KeepAlive for pooled connection
+          this._startKeepAlive();
+        } else {
+          // Fallback to creating new connection
+          logger.warn('No pooled connection available, creating new Deepgram connection');
+          await this.createNewDeepgramConnection();
+        }
+      } else {
+        // Create new connection (existing behavior)
+        await this.createNewDeepgramConnection();
+      }
+      
+      performanceMonitor.stageComplete(this.callSid, 'deepgram-connect');
+    } catch (error) {
+      performanceMonitor.recordError(this.callSid, 'deepgram-connect', error);
+      throw error;
+    }
+  }
+
+  async createNewDeepgramConnection() {
     const deepgramUrl = new URL('wss://api.deepgram.com/v1/listen');
     deepgramUrl.searchParams.set('encoding', 'mulaw');
     deepgramUrl.searchParams.set('sample_rate', '8000');
     deepgramUrl.searchParams.set('model', 'nova-2');
     deepgramUrl.searchParams.set('interim_results', 'true');
-    deepgramUrl.searchParams.set('endpointing', '450'); // Increased from 300ms
+    deepgramUrl.searchParams.set('endpointing', featureFlags.ENABLE_OPTIMIZED_VAD ? 
+      String(featureFlags.VAD_ENDPOINTING_MS) : '450');
     deepgramUrl.searchParams.set('vad_events', 'true');
-    deepgramUrl.searchParams.set('utterance_end_ms', '1000'); // Use UtteranceEnd for robust end-of-speech
+    deepgramUrl.searchParams.set('utterance_end_ms', featureFlags.ENABLE_OPTIMIZED_VAD ? 
+      String(featureFlags.VAD_UTTERANCE_END_MS) : '1000');
 
     logger.debug('Deepgram connection configuration', {
       callSid: this.callSid,
@@ -264,8 +317,8 @@ class WebSocketOrchestrator extends EventEmitter {
         encoding: 'mulaw',
         sampleRate: '8000',
         model: 'nova-2',
-        endpointing: '450',
-        utteranceEndMs: '1000',
+        endpointing: deepgramUrl.searchParams.get('endpointing'),
+        utteranceEndMs: deepgramUrl.searchParams.get('utterance_end_ms'),
         vadEvents: true,
         interimResults: true
       }
@@ -276,10 +329,19 @@ class WebSocketOrchestrator extends EventEmitter {
     });
 
     this.deepgramWs.on('open', () => {
-      logger.info('Connected to Deepgram streaming STT', { callSid: this.callSid });
+      logger.info('Created on-demand Deepgram connection for call', { 
+        callSid: this.callSid,
+        strategy: 'on-demand'
+      });
       this.logStateTransition(this.callState, 'LISTENING', 'Deepgram connected and ready');
+      // Start KeepAlive when connection opens
+      this._startKeepAlive();
     });
-    
+
+    this.setupDeepgramEventHandlers();
+  }
+
+  setupDeepgramEventHandlers() {
     this.deepgramWs.on('close', () => {
       logger.info('Deepgram WebSocket closed', { callSid: this.callSid });
     });
@@ -368,6 +430,42 @@ class WebSocketOrchestrator extends EventEmitter {
       } catch (error) {
       logger.error('Deepgram message processing error', { callSid: this.callSid, error: error.message });
       }
+    });
+  }
+
+  /**
+   * Start sending KeepAlive messages to Deepgram
+   */
+  _startKeepAlive() {
+    // Clear any existing interval to prevent duplicates
+    clearInterval(this.keepAliveInterval);
+    
+    // Create interval to send KeepAlive every 5 seconds
+    this.keepAliveInterval = setInterval(() => {
+      if (this.deepgramWs && this.deepgramWs.readyState === WebSocket.OPEN) {
+        this.deepgramWs.send(JSON.stringify({ type: 'KeepAlive' }));
+        logger.debug('Sending Deepgram KeepAlive', {
+          callSid: this.callSid,
+          timestamp: new Date().toISOString()
+        });
+      }
+    }, 5000);
+    
+    logger.debug('Started Deepgram KeepAlive timer', {
+      callSid: this.callSid,
+      interval: 5000
+    });
+  }
+
+  /**
+   * Stop sending KeepAlive messages
+   */
+  _stopKeepAlive() {
+    clearInterval(this.keepAliveInterval);
+    this.keepAliveInterval = null;
+    
+    logger.debug('Stopped Deepgram KeepAlive timer', {
+      callSid: this.callSid
     });
   }
 
@@ -693,6 +791,7 @@ class WebSocketOrchestrator extends EventEmitter {
 
     let elevenLabsStream = null;
     let ffmpegProcess = null;
+    let ffmpegOutputStream = null;
     let fullResponseText = '';
     let shouldHangup = false;
     let chunksReceived = 0;
@@ -705,27 +804,85 @@ class WebSocketOrchestrator extends EventEmitter {
       this.lastAgentUtteranceStartTime = Date.now();
       
       // Create ElevenLabs streaming connection
-      elevenLabsStream = createElevenLabsStream();
-      await elevenLabsStream.connect();
+      performanceMonitor.stageStart(this.callSid, 'elevenlabs-connect');
+      
+      if (featureFlags.ENABLE_WEBSOCKET_POOLING) {
+        const pooledConnection = await connectionPool.getElevenLabsConnection();
+        if (pooledConnection) {
+          elevenLabsStream = pooledConnection.connection;
+          logger.info('Using pooled ElevenLabs connection', {
+            streamId,
+            connectionId: pooledConnection.id
+          });
+        } else {
+          elevenLabsStream = createElevenLabsStream();
+          await elevenLabsStream.connect();
+        }
+      } else {
+        elevenLabsStream = createElevenLabsStream();
+        await elevenLabsStream.connect();
+        logger.info('Created on-demand ElevenLabs connection', {
+          streamId,
+          strategy: 'on-demand'
+        });
+      }
+      
+      performanceMonitor.stageComplete(this.callSid, 'elevenlabs-connect');
       
       // Set up FFmpeg for real-time transcoding
+      performanceMonitor.stageStart(this.callSid, 'ffmpeg-setup');
       const ffmpegInputStream = new PassThrough();
       
-      ffmpegProcess = ffmpeg(ffmpegInputStream)
-        .inputFormat('mp3')
-        .audioCodec('pcm_mulaw')
-        .audioFrequency(8000)
-        .toFormat('mulaw')
-        .on('error', (err) => {
-          if (!err.message.includes('SIGKILL')) {
-            logger.error('FFmpeg streaming error', {
-              streamId,
-              error: err.message
-            });
-          }
-        });
+      if (featureFlags.ENABLE_FFMPEG_POOLING) {
+        const pooledProcess = await ffmpegPool.getProcess();
+        if (pooledProcess) {
+          ffmpegProcess = pooledProcess.process;
+          logger.info('Using pooled FFmpeg process', {
+            streamId,
+            processId: pooledProcess.id
+          });
+          
+          // Configure the pooled process - pipe input stream TO ffmpeg
+          ffmpegInputStream.pipe(ffmpegProcess.stdin);
+        } else {
+          // Fallback to creating new process
+          ffmpegProcess = ffmpegPool.createStandaloneProcess();
+          ffmpegInputStream.pipe(ffmpegProcess.stdin);
+        }
+      } else {
+        ffmpegProcess = ffmpeg(ffmpegInputStream)
+          .inputFormat('mp3')
+          .audioCodec('pcm_mulaw')
+          .audioFrequency(8000)
+          .toFormat('mulaw')
+          .on('error', (err) => {
+            if (!err.message.includes('SIGKILL')) {
+              logger.error('FFmpeg streaming error', {
+                streamId,
+                error: err.message
+              });
+            }
+          });
+      }
       
-      const ffmpegOutputStream = ffmpegProcess.pipe();
+      performanceMonitor.stageComplete(this.callSid, 'ffmpeg-setup');
+      
+      ffmpegOutputStream = ffmpegProcess.pipe ? ffmpegProcess.pipe() : ffmpegProcess.stdout;
+      
+      // Add error handling to the pipe
+      ffmpegInputStream.on('error', (err) => {
+        logger.error('FFmpeg input stream error', {
+          streamId,
+          error: err.message
+        });
+      });
+      
+      // Ensure pipe is established before processing audio
+      logger.debug('Audio pipeline established', {
+        streamId,
+        ffmpegInputStreamWritable: ffmpegInputStream.writable,
+        ffmpegProcessStdinWritable: ffmpegProcess.stdin?.writable
+      });
       
       // Handle audio from ElevenLabs → FFmpeg → Twilio
       elevenLabsStream.on('audio', (audioBuffer) => {
@@ -734,8 +891,12 @@ class WebSocketOrchestrator extends EventEmitter {
           return;
         }
         
-        // Write to FFmpeg for transcoding
-        ffmpegInputStream.write(audioBuffer);
+        // Write to FFmpeg for transcoding (with error handling)
+        if (ffmpegInputStream && !ffmpegInputStream.destroyed && ffmpegInputStream.writable) {
+          ffmpegInputStream.write(audioBuffer);
+        } else {
+          logger.warn('FFmpeg input stream not writable, dropping audio chunk', { streamId });
+        }
       });
       
       // Handle transcoded audio from FFmpeg → Twilio
@@ -763,6 +924,21 @@ class WebSocketOrchestrator extends EventEmitter {
         }
       });
       
+      // Log when FFmpeg output stream ends
+      ffmpegOutputStream.on('end', () => {
+        logger.info('FFmpeg output stream ended - all audio processed', {
+          streamId,
+          totalAudioChunks: audioChunksSent
+        });
+      });
+      
+      ffmpegOutputStream.on('error', (err) => {
+        logger.error('FFmpeg output stream error', {
+          streamId,
+          error: err.message
+        });
+      });
+      
       // Get LLM response stream
       const llmStream = conversationService.getResponseStream(userInput, this.callSid, this.userId);
       
@@ -787,8 +963,16 @@ class WebSocketOrchestrator extends EventEmitter {
         chunksReceived++;
         fullResponseText += textChunk;
         
-        // Send to ElevenLabs
-        elevenLabsStream.sendText(textChunk);
+        // Send to ElevenLabs with flush on sentence boundaries
+        const shouldFlush = /[.!?]\s*$/.test(textChunk);
+        elevenLabsStream.sendText(textChunk, shouldFlush);
+        
+        if (shouldFlush) {
+          logger.debug('Flushing ElevenLabs on sentence boundary', {
+            streamId,
+            textChunk: textChunk.trim()
+          });
+        }
         
         // Update last utterance for debugging
         this.lastAgentUtterance = fullResponseText;
@@ -817,6 +1001,37 @@ class WebSocketOrchestrator extends EventEmitter {
       
       // Close FFmpeg input to flush remaining audio
       ffmpegInputStream.end();
+      
+      // CRITICAL FIX: Wait for FFmpeg to finish processing all audio
+      await new Promise((resolve) => {
+        logger.debug('Waiting for FFmpeg to complete audio processing', { streamId });
+        
+        // Listen for FFmpeg output stream to end
+        if (ffmpegOutputStream) {
+          ffmpegOutputStream.once('end', () => {
+            logger.debug('FFmpeg output stream ended', { streamId });
+            resolve();
+          });
+          ffmpegOutputStream.once('close', () => {
+            logger.debug('FFmpeg output stream closed', { streamId });
+            resolve();
+          });
+        }
+        
+        // Also listen for the FFmpeg process to exit
+        if (ffmpegProcess && ffmpegProcess.on) {
+          ffmpegProcess.once('exit', () => {
+            logger.debug('FFmpeg process exited', { streamId });
+            resolve();
+          });
+        }
+        
+        // Timeout after 3 seconds to prevent hanging
+        setTimeout(() => {
+          logger.warn('FFmpeg completion timeout reached', { streamId });
+          resolve();
+        }, 3000);
+      });
       
       // Get metadata if available
       if (llmStream.metadata) {
@@ -871,15 +1086,31 @@ class WebSocketOrchestrator extends EventEmitter {
     } finally {
       // Cleanup
       if (elevenLabsStream) {
-        elevenLabsStream.close();
+        if (featureFlags.ENABLE_WEBSOCKET_POOLING) {
+          connectionPool.releaseConnection(elevenLabsStream, 'elevenlabs');
+        } else {
+          elevenLabsStream.close();
+          logger.info('Closed on-demand ElevenLabs connection', {
+            streamId,
+            strategy: 'on-demand'
+          });
+        }
       }
       
       if (ffmpegProcess) {
-        ffmpegProcess.kill('SIGKILL');
+        if (featureFlags.ENABLE_FFMPEG_POOLING && ffmpegProcess.id) {
+          ffmpegPool.releaseProcess(ffmpegProcess.id);
+        } else {
+          ffmpegProcess.kill('SIGKILL');
+        }
       }
       
+      // Set isSpeaking to false only after all audio has been sent
       this.isSpeaking = false;
       this.processingLLM = false;
+      
+      // Restart KeepAlive when returning to listening state
+      this._startKeepAlive();
       
       logger.debug('Streaming cleanup completed', {
         streamId,
@@ -890,7 +1121,7 @@ class WebSocketOrchestrator extends EventEmitter {
 
   /**
    * Downloads audio from ElevenLabs, then transcodes and streams it to Twilio.
-   * (Legacy method - kept for fallback and non-streaming scenarios)
+   * Updated to use streaming approach to prevent race conditions.
    */
   async streamToTTS(text) {
     const ttsStartTime = Date.now();
@@ -925,110 +1156,144 @@ class WebSocketOrchestrator extends EventEmitter {
     });
     
     try {
+      let audioStream;
+      let audioDataPromise;
+      let synthesisTime = 0;
+      let cacheHit = false;
+      let cachedAudio = null;
+      
+      // Check audio cache first
+      if (featureFlags.ENABLE_AUDIO_RESPONSE_CACHE) {
+        performanceMonitor.stageStart(this.callSid, 'audio-cache-lookup');
+        cachedAudio = await audioCache.getCachedAudio(text, aiConfig.elevenLabs.voiceId);
+        performanceMonitor.stageComplete(this.callSid, 'audio-cache-lookup');
+        
+        if (cachedAudio && cachedAudio.ulaw) {
+          logger.info('Audio cache HIT', {
+            callSid: this.callSid,
+            textPreview: text.substring(0, 50),
+            correlationId
+          });
+          
+          // Use cached μ-law audio directly - skip TTS and transcoding
+          cacheHit = true;
+          performanceMonitor.recordCacheHit(true);
+          
+          // Stream cached audio directly to Twilio
+          this.streamMulawToTwilio(cachedAudio.ulaw, correlationId, ttsStartTime);
+          return; // Exit early for cached audio
+        } else {
+          performanceMonitor.recordCacheHit(false);
+        }
+      }
+      
+      // Not cached - use streaming TTS approach
+      performanceMonitor.stageStart(this.callSid, 'tts');
       const elevenLabsStartTime = Date.now();
       
-      const response = await axios({
-        method: 'POST',
-        url: `https://api.elevenlabs.io/v1/text-to-speech/${aiConfig.elevenLabs.voiceId}`,
-        headers: { 'Accept': 'audio/mpeg', 'xi-api-key': aiConfig.elevenLabs.apiKey, 'Content-Type': 'application/json' },
-        data: { text: text, model_id: 'eleven_turbo_v2' },
-        responseType: 'arraybuffer'
-      });
-
-      const elevenLabsEndTime = Date.now();
-      const synthesisTime = elevenLabsEndTime - elevenLabsStartTime;
-
-      if (response.status !== 200 || !response.data || response.data.length === 0) {
-        throw new Error(`ElevenLabs API returned status ${response.status} or empty audio.`);
-      }
-
-      this.logAudioEvent('TTS_SYNTHESIS_COMPLETED', {
-        synthesisTimeMs: synthesisTime,
-        audioSizeBytes: response.data.length,
-        correlationId
-      });
-
-      const audioBuffer = Buffer.from(response.data);
-      const readable = Readable.from(audioBuffer);
-
-      const transcodingStartTime = Date.now();
+      // Use the new streaming function
+      const ttsResult = await textToSpeech.streamTextToSpeech(text);
+      audioStream = ttsResult.stream;
+      audioDataPromise = ttsResult.audioDataPromise;
       
-      this.ffmpegCommand = ffmpeg(readable)
+      const elevenLabsEndTime = Date.now();
+      synthesisTime = elevenLabsEndTime - elevenLabsStartTime;
+      performanceMonitor.stageComplete(this.callSid, 'tts', { duration: synthesisTime });
+      
+      this.logAudioEvent('TTS_SYNTHESIS_STARTED_STREAMING', {
+        synthesisTimeMs: synthesisTime,
+        correlationId
+      })
+
+      // Stream and transcode audio in real-time
+      const transcodingStartTime = Date.now();
+      performanceMonitor.stageStart(this.callSid, 'transcode');
+      
+      // Use FFmpeg with streaming input
+      this.ffmpegCommand = ffmpeg(audioStream)
         .inputFormat('mp3')
         .audioCodec('pcm_mulaw')
         .audioFrequency(8000)
         .toFormat('mulaw');
 
-      this.ffmpegCommand.on('start', (commandLine) => {
-        this.logStateTransition(this.callState, this.callState, 'FFMPEG process started', { commandLine });
-      });
-
-      this.ffmpegCommand.on('error', (err, stdout, stderr) => {
-        // Don't log "ffmpeg was killed with signal SIGKILL" as an error
-        if (err.message.includes('SIGKILL')) {
-            logger.debug('FFmpeg process killed for barge-in', { callSid: this.callSid });
-            return;
-        }
-        logger.error('FFmpeg transcoding error', { 
-            callSid: this.callSid, 
-            error: err.message,
-            stdout,
-            stderr
+        this.ffmpegCommand.on('start', (commandLine) => {
+          this.logStateTransition(this.callState, this.callState, 'FFMPEG process started', { commandLine });
         });
-        this.stopSpeaking();
-      });
 
-      this.ffmpegCommand.on('end', () => {
-        logger.debug('FFmpeg transcoding finished', { callSid: this.callSid, responseId: this.currentResponseId });
-        this.stopSpeaking();
-      });
-
-      const outputStream = new PassThrough();
-      this.ffmpegCommand.pipe(outputStream);
-
-      // Stream the raw audio to Twilio
-      let chunkCount = 0;
-      let totalBytes = 0;
-      let firstChunkTime = null;
-
-      // CRITICAL FIX: Use standard 'data' and 'end' events for robust streaming.
-      const transcodedStream = new PassThrough();
-      outputStream.pipe(transcodedStream);
-
-      transcodedStream.on('data', (chunk) => {
-        if (!firstChunkTime) {
-          firstChunkTime = Date.now();
-          this.logAudioEvent('FIRST_AUDIO_CHUNK_SENT', {
-            transcodingTimeMs: firstChunkTime - transcodingStartTime,
-            chunkSize: chunk.length,
-            correlationId
+        this.ffmpegCommand.on('error', (err, stdout, stderr) => {
+          // Don't log "ffmpeg was killed with signal SIGKILL" as an error
+          if (err.message.includes('SIGKILL')) {
+              logger.debug('FFmpeg process killed for barge-in', { callSid: this.callSid });
+              return;
+          }
+          logger.error('FFmpeg transcoding error', { 
+              callSid: this.callSid, 
+              error: err.message,
+              stdout,
+              stderr
           });
-        }
-        
-        chunkCount++;
-        totalBytes += chunk.length;
-        
-        if (!this.isSpeaking) {
-          // If barge-in occurred, stop sending data and destroy the stream.
-          this.logAudioEvent('AUDIO_STREAM_INTERRUPTED', {
-            reason: 'Barge-in detected',
-            chunksDelivered: chunkCount,
-            bytesDelivered: totalBytes,
-            correlationId
-          });
-          transcodedStream.destroy();
-          return;
-        }
-        if (this.twilioWs?.readyState === WebSocket.OPEN) {
-          this.twilioWs.send(JSON.stringify({
-            event: 'media',
-            streamSid: this.streamSid,
-            media: { payload: chunk.toString('base64') }
-          }));
-        }
-      });
+          this.stopSpeaking();
+        });
 
-      transcodedStream.on('end', () => {
+        this.ffmpegCommand.on('end', () => {
+          logger.debug('FFmpeg transcoding finished', { callSid: this.callSid, responseId: this.currentResponseId });
+          // Remove stopSpeaking() here - let the stream end event handle it
+        });
+
+        const outputStream = new PassThrough();
+        this.ffmpegCommand.pipe(outputStream);
+
+        // Stream the raw audio to Twilio
+        let chunkCount = 0;
+        let totalBytes = 0;
+        let firstChunkTime = null;
+
+        // CRITICAL FIX: Use standard 'data' and 'end' events for robust streaming.
+        const transcodedStream = new PassThrough();
+        outputStream.pipe(transcodedStream);
+
+        // Buffer to collect transcoded audio for caching
+        const transcodedChunks = [];
+
+        transcodedStream.on('data', (chunk) => {
+          if (!firstChunkTime) {
+            firstChunkTime = Date.now();
+            this.logAudioEvent('FIRST_AUDIO_CHUNK_SENT', {
+              transcodingTimeMs: firstChunkTime - transcodingStartTime,
+              chunkSize: chunk.length,
+              correlationId
+            });
+          }
+          
+          chunkCount++;
+          totalBytes += chunk.length;
+          
+          // Collect chunks for caching
+          if (featureFlags.ENABLE_AUDIO_RESPONSE_CACHE && !cacheHit) {
+            transcodedChunks.push(chunk);
+          }
+          
+          if (!this.isSpeaking) {
+            // If barge-in occurred, stop sending data and destroy the stream.
+            this.logAudioEvent('AUDIO_STREAM_INTERRUPTED', {
+              reason: 'Barge-in detected',
+              chunksDelivered: chunkCount,
+              bytesDelivered: totalBytes,
+              correlationId
+            });
+            transcodedStream.destroy();
+            return;
+          }
+          if (this.twilioWs?.readyState === WebSocket.OPEN) {
+            this.twilioWs.send(JSON.stringify({
+              event: 'media',
+              streamSid: this.streamSid,
+              media: { payload: chunk.toString('base64') }
+            }));
+          }
+        });
+
+        transcodedStream.on('end', async () => {
         const audioEndTime = Date.now();
         this.lastAgentUtteranceEndTime = audioEndTime;
         
@@ -1040,11 +1305,34 @@ class WebSocketOrchestrator extends EventEmitter {
           correlationId
         });
         
+        performanceMonitor.stageComplete(this.callSid, 'transcode');
+        
+        // Cache the transcoded audio if we have the complete audio data
+        if (featureFlags.ENABLE_AUDIO_RESPONSE_CACHE && !cacheHit && transcodedChunks.length > 0 && audioDataPromise) {
+          try {
+            const transcodedBuffer = Buffer.concat(transcodedChunks);
+            const mp3Buffer = await audioDataPromise; // Get the complete MP3 buffer
+            await audioCache.cacheAudio(text, aiConfig.elevenLabs.voiceId, mp3Buffer, transcodedBuffer);
+            logger.debug('Audio cached successfully', {
+              callSid: this.callSid,
+              textPreview: text.substring(0, 50)
+            });
+          } catch (cacheError) {
+            logger.error('Failed to cache audio', { 
+              callSid: this.callSid, 
+              error: cacheError.message 
+            });
+          }
+        }
+        
         logger.debug('Audio playback transcoding completed', { callSid: this.callSid });
         const oldState = this.isSpeaking;
         this.isSpeaking = false;
         
         this.logStateTransition(this.callState, 'LISTENING', 'Audio playback completed, ready for user input');
+        
+        // Restart KeepAlive when returning to listening state
+        this._startKeepAlive();
         
         logger.debug('State change: isSpeaking', { 
           callSid: this.callSid, 
@@ -1073,6 +1361,9 @@ class WebSocketOrchestrator extends EventEmitter {
         
         this.logStateTransition(this.callState, 'LISTENING', 'Audio transcoding error, returning to listening state');
         
+        // Restart KeepAlive when returning to listening state after error
+        this._startKeepAlive();
+        
         logger.debug('State change: isSpeaking', { 
           callSid: this.callSid, 
           from: oldState, 
@@ -1082,7 +1373,7 @@ class WebSocketOrchestrator extends EventEmitter {
           correlationId
         });
       });
-
+      
     } catch (error) {
       const errorTime = Date.now();
       this.lastAgentUtteranceEndTime = errorTime;
@@ -1099,6 +1390,9 @@ class WebSocketOrchestrator extends EventEmitter {
       
       this.logStateTransition(this.callState, 'LISTENING', 'TTS synthesis error, returning to listening state');
       
+      // Restart KeepAlive when returning to listening state after TTS error
+      this._startKeepAlive();
+      
       logger.debug('State change: isSpeaking', { 
         callSid: this.callSid, 
         from: oldState, 
@@ -1108,6 +1402,55 @@ class WebSocketOrchestrator extends EventEmitter {
         correlationId
       });
     }
+  }
+
+  /**
+   * Streams μ-law audio directly to Twilio (for cached audio)
+   */
+  streamMulawToTwilio(mulawBuffer, correlationId, startTime) {
+    const chunkSize = 1024; // Send in 1KB chunks
+    let offset = 0;
+    let chunkCount = 0;
+    
+    const sendNextChunk = () => {
+      if (!this.isSpeaking || this.isUserSpeaking || offset >= mulawBuffer.length) {
+        // Done sending or interrupted
+        const audioEndTime = Date.now();
+        this.lastAgentUtteranceEndTime = audioEndTime;
+        
+        this.logAudioEvent('CACHED_AUDIO_PLAYBACK_COMPLETED', {
+          totalDeliveryTimeMs: audioEndTime - startTime,
+          chunksDelivered: chunkCount,
+          bytesDelivered: offset,
+          correlationId
+        });
+        
+        this.isSpeaking = false;
+        this.logStateTransition(this.callState, 'LISTENING', 'Cached audio playback completed');
+        
+        // Restart KeepAlive when returning to listening state after cached audio
+        this._startKeepAlive();
+        
+        return;
+      }
+      
+      const chunk = mulawBuffer.slice(offset, offset + chunkSize);
+      offset += chunk.length;
+      chunkCount++;
+      
+      if (this.twilioWs?.readyState === WebSocket.OPEN) {
+        this.twilioWs.send(JSON.stringify({
+          event: 'media',
+          streamSid: this.streamSid,
+          media: { payload: chunk.toString('base64') }
+        }));
+      }
+      
+      // Send next chunk after a small delay to simulate real-time streaming
+      setTimeout(sendNextChunk, 20); // ~50 chunks per second
+    };
+    
+    sendNextChunk();
   }
 
   /**
@@ -1125,6 +1468,9 @@ class WebSocketOrchestrator extends EventEmitter {
       interruptedUtterance: this.lastAgentUtterance,
       speechDurationMs: this.lastAgentUtteranceStartTime ? stopTime - this.lastAgentUtteranceStartTime : null
     });
+    
+    // Restart KeepAlive when returning to listening state after barge-in
+    this._startKeepAlive();
     
     this.logAudioEvent('AUDIO_PLAYBACK_STOPPED_BARGE_IN', {
       reason: 'User barge-in',
@@ -1208,8 +1554,30 @@ class WebSocketOrchestrator extends EventEmitter {
     
     this.logStateTransition(this.callState, 'TERMINATED', 'Cleanup initiated');
     
-    this.deepgramWs?.close();
+    // Stop KeepAlive timer
+    this._stopKeepAlive();
+    
+    // Release connections back to pool if using pooling
+    if (featureFlags.ENABLE_WEBSOCKET_POOLING) {
+      if (this.deepgramWs) {
+        connectionPool.releaseConnection(this.deepgramWs, 'deepgram');
+      }
+    } else {
+      // Close on-demand connections
+      if (this.deepgramWs) {
+        this.deepgramWs.close();
+        logger.info('Closed on-demand Deepgram connection', { 
+          callSid: this.callSid,
+          strategy: 'on-demand'
+        });
+      }
+    }
+    
     this.twilioWs?.close();
+    
+    // Complete performance monitoring session
+    performanceMonitor.completeSession(this.callSid);
+    
     this.emit('call_ended');
   }
 }

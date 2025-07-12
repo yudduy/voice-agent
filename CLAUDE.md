@@ -334,6 +334,13 @@ tail -f logs/combined.log
 3. **Enhanced error messages** - Detailed ngrok setup instructions
 4. **Optimized imports** - Moved crypto require to top level
 
+### Voice Pipeline Race Condition Fix
+1. **Fixed agent speech cutoff** - Resolved critical bug where agent's speech was interrupted after < 1 second
+2. **Streaming TTS implementation** - Added `streamTextToSpeech` function in textToSpeech.js for proper streaming
+3. **Refactored streamToTTS** - Updated websocketOrchestrator.js to use streaming approach preventing race conditions
+4. **Decoupled caching from playback** - Audio streams immediately while caching happens asynchronously
+5. **Improved error handling** - Better handling of stream errors and interruptions
+
 ## Known Issues & TODOs
 
 1. **Testing**: Voice tests may need updates to match the new Microsoft Support persona

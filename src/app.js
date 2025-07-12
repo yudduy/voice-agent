@@ -16,6 +16,10 @@ const fs = require('fs');
 const voiceMonitor = require('./utils/voiceMonitor');
 const rateLimit = require('express-rate-limit');
 const { performance: performanceConfig } = require('./config');
+const { featureFlags, logFeatureFlags } = require('./config/featureFlags');
+const connectionPool = require('./services/connectionPool');
+const ffmpegPool = require('./services/ffmpegPool');
+const audioCache = require('./services/audioCache');
 
 // Create Express app
 const app = express();
@@ -145,6 +149,27 @@ const PORT = process.env.PORT || 3000;
 const startServer = async () => {
   try {
     // Supabase client initializes itself; no explicit connect call needed.
+    
+    // Log feature flags
+    logFeatureFlags(logger);
+    
+    // Initialize optimization services based on feature flags
+    logger.info('Initializing performance optimization services...');
+    
+    if (featureFlags.ENABLE_WEBSOCKET_POOLING) {
+      await connectionPool.initialize();
+      logger.info('WebSocket connection pool initialized');
+    }
+    
+    if (featureFlags.ENABLE_FFMPEG_POOLING) {
+      await ffmpegPool.initialize();
+      logger.info('FFmpeg process pool initialized');
+    }
+    
+    if (featureFlags.ENABLE_AUDIO_RESPONSE_CACHE) {
+      await audioCache.initialize();
+      logger.info('Audio response cache initialized');
+    }
     
     // Create HTTP server instance first, but don't start listening yet
     const server = http.createServer(app);

@@ -13,6 +13,7 @@ const fs = require('fs');
 const fsp = require('fs').promises;
 const path = require('path');
 const crypto = require('crypto');
+const { PassThrough } = require('stream');
 
 // In-memory cache for generated audio URLs
 const ttsCache = new Map();
@@ -455,10 +456,107 @@ const generateAudio = async (text, options = {}) => {
   return null;
 };
 
+/**
+ * Stream text to speech with ElevenLabs API
+ * Returns both a stream for immediate playback and a promise for the complete buffer
+ * @param {string} text - Text to synthesize
+ * @param {object} options - Options (e.g., voice_id, voice_settings)
+ * @returns {Promise<{stream: PassThrough, audioDataPromise: Promise<Buffer>}>}
+ */
+const streamTextToSpeech = async (text, options = {}) => {
+  if (!aiConfig.elevenLabs.enabled) {
+    throw new Error('ElevenLabs TTS is disabled');
+  }
+
+  if (!text || text.trim().length === 0) {
+    throw new Error('Cannot stream empty text');
+  }
+
+  const voiceId = options.voice_id || aiConfig.elevenLabs.voiceId;
+  const url = `${aiConfig.elevenLabs.ttsEndpoint}/${voiceId}`;
+
+  const requestOptions = {
+    method: 'POST',
+    url: url,
+    headers: {
+      'Accept': 'audio/mpeg',
+      'xi-api-key': aiConfig.elevenLabs.apiKey,
+      'Content-Type': 'application/json',
+    },
+    data: {
+      text: text,
+      model_id: aiConfig.elevenLabs.defaultOptions.model_id || 'eleven_turbo_v2',
+      voice_settings: {
+        stability: aiConfig.elevenLabs.defaultOptions.voice_settings?.stability || 0.5,
+        similarity_boost: aiConfig.elevenLabs.defaultOptions.voice_settings?.similarity_boost || 0.75,
+        style: aiConfig.elevenLabs.defaultOptions.voice_settings?.style || 0,
+        use_speaker_boost: aiConfig.elevenLabs.defaultOptions.voice_settings?.use_speaker_boost || true
+      },
+      optimize_streaming_latency: 0,
+      ...options,
+    },
+    responseType: 'stream',
+    timeout: performanceConfig.timeouts.elevenLabsTTS || 30000,
+  };
+
+  logger.debug('Starting ElevenLabs streaming TTS', { 
+    url, 
+    textLength: text.length,
+    textPreview: text.substring(0, 50) 
+  });
+
+  const response = await axios(requestOptions);
+  
+  // Create a PassThrough stream for immediate consumption
+  const stream = new PassThrough();
+  
+  // Create a promise that resolves with the complete audio buffer
+  const chunks = [];
+  const audioDataPromise = new Promise((resolve, reject) => {
+    let totalBytes = 0;
+    
+    stream.on('data', (chunk) => {
+      chunks.push(chunk);
+      totalBytes += chunk.length;
+    });
+    
+    stream.on('end', () => {
+      if (totalBytes === 0) {
+        reject(new Error('Empty audio stream received from ElevenLabs'));
+      } else {
+        const completeBuffer = Buffer.concat(chunks);
+        logger.info('ElevenLabs streaming completed', {
+          textLength: text.length,
+          audioBytes: totalBytes,
+          audioSizeKB: Math.round(totalBytes / 1024)
+        });
+        resolve(completeBuffer);
+      }
+    });
+    
+    stream.on('error', (err) => {
+      logger.error('Error in ElevenLabs stream', { error: err.message });
+      reject(err);
+    });
+  });
+
+  // Pipe the response to our PassThrough stream
+  response.data.pipe(stream);
+  
+  // Handle response errors
+  response.data.on('error', (err) => {
+    logger.error('Error in ElevenLabs response stream', { error: err.message });
+    stream.destroy(err);
+  });
+
+  return { stream, audioDataPromise };
+};
+
 module.exports = {
   formatTextForSpeech,
   getTwilioTtsOptions,
   splitIntoSpeechChunks,
   generateElevenLabsAudio,
-  generateAudio
+  generateAudio,
+  streamTextToSpeech
 };
