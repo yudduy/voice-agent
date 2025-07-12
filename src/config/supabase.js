@@ -1,4 +1,5 @@
 const { createClient } = require('@supabase/supabase-js');
+const logger = require('../utils/logger');
 
 const supabaseUrl = process.env.SUPABASE_URL;
 const supabaseKey =
@@ -34,9 +35,9 @@ const supabase = createClient(supabaseUrl, supabaseKey, {
 // Warm up the connection pool on startup
 if (process.env.NODE_ENV !== 'test') {
   supabase.from('users').select('id').limit(1).then(() => {
-    console.log('Supabase connection pool warmed up');
+    logger.info('Supabase connection pool warmed up');
   }).catch(err => {
-    console.error('Failed to warm up Supabase connection:', err.message);
+    logger.error('Failed to warm up Supabase connection:', err);
   });
 }
 

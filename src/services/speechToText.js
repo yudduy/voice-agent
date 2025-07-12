@@ -96,9 +96,6 @@ const transcribeWithGroq = async (audioUrl) => {
     const transcription = await groqClient.audio.transcriptions.create({
       file: fs.createReadStream(tempFilePath),
       model: aiConfig.groqConfig.whisperModel, 
-      // language: 'en', // Optional: specify language if needed
-      // response_format: 'json', // Default
-      // temperature: 0, // Optional: control randomness
     });
 
     logger.info('🎤 [STT-SUCCESS] Groq transcription successful', { 
@@ -169,8 +166,6 @@ const validateSpeechResult = (speechResult, confidence) => {
   if (!speechResult || speechResult.trim().length === 0) {
     return false;
   }
-  // Add confidence check if needed (using telephonyConfig)
-  // if (confidence !== undefined && confidence < telephonyConfig.minSpeechConfidence) { ... }
   return true;
 };
 

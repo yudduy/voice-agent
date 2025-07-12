@@ -5,9 +5,8 @@ const { OpenAI } = require('openai');
 const aiConfig = require('../config/ai');
 const promptUtils = require('../utils/prompt');
 const logger = require('../utils/logger');
-// const databaseService = require('./database'); // REMOVED - No longer used
 const cacheService = require('./cacheService');
-const redis = require('../config/redis'); // Direct redis access for callSid mapping
+const redis = require('../config/redis');
 const userRepository = require('../repositories/userRepository');
 
 // Initialize OpenAI client

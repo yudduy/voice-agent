@@ -44,7 +44,7 @@ class WebSocketOrchestrator extends EventEmitter {
     this.lastQuestionAsked = null;
     this.identificationAttempts = 0;
     
-    // DEBUG: Enhanced state tracking for investigation
+    // Enhanced state tracking
     this.callState = 'IDLE'; // IDLE, LISTENING, LLM_PROCESSING, AGENT_SPEAKING, BARGE_IN_DETECTED
     this.lastAgentUtterance = null;
     this.lastAgentUtteranceStartTime = null;
@@ -72,8 +72,7 @@ class WebSocketOrchestrator extends EventEmitter {
     // Feature flags
     this.USE_STREAMING_PIPELINE = process.env.ENABLE_SPECULATIVE_TTS === 'true';
     
-    // DEBUG: Log orchestrator initialization
-    logger.info('🎬 [DEBUG] WebSocketOrchestrator initialized', {
+    logger.debug('WebSocketOrchestrator initialized', {
       callSid: this.callSid,
       timestamp: new Date().toISOString(),
       initialState: this.callState,
@@ -87,11 +86,11 @@ class WebSocketOrchestrator extends EventEmitter {
   }
 
   /**
-   * DEBUG: Log state transitions with detailed context
+   * Log state transitions with detailed context
    */
   logStateTransition(fromState, toState, reason, additionalContext = {}) {
     const correlationId = ++this.correlationId;
-    logger.info('🔄 [DEBUG-STATE] Call state transition', {
+    logger.debug('Call state transition', {
       callSid: this.callSid,
       correlationId,
       timestamp: new Date().toISOString(),
@@ -113,10 +112,10 @@ class WebSocketOrchestrator extends EventEmitter {
   }
 
   /**
-   * DEBUG: Log audio delivery events with precise timing
+   * Log audio delivery events with precise timing
    */
   logAudioEvent(eventType, details = {}) {
-    logger.info('🔊 [DEBUG-AUDIO] Audio delivery event', {
+    logger.debug('Audio delivery event', {
       callSid: this.callSid,
       timestamp: new Date().toISOString(),
       timestampMs: Date.now(),
@@ -130,10 +129,10 @@ class WebSocketOrchestrator extends EventEmitter {
   }
 
   /**
-   * DEBUG: Log transcript processing with timing analysis
+   * Log transcript processing with timing analysis
    */
   logTranscriptEvent(eventType, transcript, details = {}) {
-    logger.info('🎙️ [DEBUG-TRANSCRIPT] Transcript processing', {
+    logger.debug('Transcript processing', {
       callSid: this.callSid,
       timestamp: new Date().toISOString(),
       timestampMs: Date.now(),
@@ -154,7 +153,7 @@ class WebSocketOrchestrator extends EventEmitter {
    */
   async handleTwilioConnection(ws) {
     this.twilioWs = ws;
-    logger.info('🎙️ [WebSocket] Twilio Media Stream connected', { callSid: this.callSid });
+    logger.info('Twilio Media Stream connected', { callSid: this.callSid });
 
     // The Deepgram connection will be initiated *after* the greeting is played.
     
@@ -164,13 +163,13 @@ class WebSocketOrchestrator extends EventEmitter {
         
         switch (data.event) {
           case 'connected':
-            logger.info(`📞 [Twilio] Media Stream ready for SID: ${data.streamSid}`, { callSid: this.callSid });
+            logger.info(`Media Stream ready for SID: ${data.streamSid}`, { callSid: this.callSid });
             break;
             
           case 'start':
             this.streamSid = data.start.streamSid;
             this.userId = data.start.customParameters.userId;
-            logger.info(`🎬 [Twilio] Stream started. UserId: ${this.userId}`, { callSid: this.callSid });
+            logger.info(`Stream started. UserId: ${this.userId}`, { callSid: this.callSid });
             
             this.logStateTransition('IDLE', 'INITIALIZING', 'Twilio stream started');
             
@@ -185,9 +184,9 @@ class WebSocketOrchestrator extends EventEmitter {
               const audioBuffer = Buffer.from(data.media.payload, 'base64');
               this.deepgramWs.send(audioBuffer);
               
-              // DEBUG: Log audio data flow (sampled to avoid spam)
+              // Log audio data flow (sampled to avoid spam)
               if (Math.random() < 0.01) { // Log 1% of audio packets
-                logger.debug('📡 [DEBUG-AUDIO-FLOW] Twilio → Deepgram audio packet', {
+                logger.debug('Twilio → Deepgram audio packet', {
                   callSid: this.callSid,
                   timestamp: new Date().toISOString(),
                   payloadSize: audioBuffer.length,
@@ -198,24 +197,24 @@ class WebSocketOrchestrator extends EventEmitter {
             break;
             
           case 'stop':
-            logger.info('🛑 [Twilio] Stream stopped', { callSid: this.callSid });
+            logger.info('Stream stopped', { callSid: this.callSid });
             this.logStateTransition(this.callState, 'TERMINATED', 'Twilio stream stopped');
             this.cleanup();
             break;
         }
       } catch (error) {
-        logger.error('❌ [Twilio] Message processing error', { callSid: this.callSid, error: error.message });
+        logger.error('Twilio message processing error', { callSid: this.callSid, error: error.message });
       }
     });
 
     ws.on('close', () => {
-      logger.info('🔌 [Twilio] WebSocket closed', { callSid: this.callSid });
+      logger.info('Twilio WebSocket closed', { callSid: this.callSid });
       this.logStateTransition(this.callState, 'DISCONNECTED', 'Twilio WebSocket closed');
       this.cleanup();
     });
 
     ws.on('error', (error) => {
-      logger.error('❌ [Twilio] WebSocket error', { callSid: this.callSid, error: error.message });
+      logger.error('Twilio WebSocket error', { callSid: this.callSid, error: error.message });
     });
   }
 
@@ -238,10 +237,10 @@ class WebSocketOrchestrator extends EventEmitter {
         greetingType: 'initial'
       });
       
-      logger.info('🎤 [Greeting] Playing Ben/Microsoft Support identification greeting', { callSid: this.callSid, text: greetingText });
+      logger.info('Playing greeting', { callSid: this.callSid, text: greetingText });
       await this.streamToTTS(greetingText);
     } catch (error) {
-      logger.error('❌ [Greeting] Failed to play greeting, using default.', { callSid: this.callSid, error: error.message });
+      logger.error('Failed to play greeting, using default', { callSid: this.callSid, error: error.message });
       await this.streamToTTS(greetingText);
     }
   }
@@ -259,7 +258,7 @@ class WebSocketOrchestrator extends EventEmitter {
     deepgramUrl.searchParams.set('vad_events', 'true');
     deepgramUrl.searchParams.set('utterance_end_ms', '1000'); // Use UtteranceEnd for robust end-of-speech
 
-    logger.info('🎤 [DEBUG] Deepgram connection configuration', {
+    logger.debug('Deepgram connection configuration', {
       callSid: this.callSid,
       config: {
         encoding: 'mulaw',
@@ -277,16 +276,16 @@ class WebSocketOrchestrator extends EventEmitter {
     });
 
     this.deepgramWs.on('open', () => {
-      logger.info('🎤 [Deepgram] Connected to streaming STT', { callSid: this.callSid });
+      logger.info('Connected to Deepgram streaming STT', { callSid: this.callSid });
       this.logStateTransition(this.callState, 'LISTENING', 'Deepgram connected and ready');
     });
     
     this.deepgramWs.on('close', () => {
-      logger.info('🔌 [Deepgram] WebSocket closed', { callSid: this.callSid });
+      logger.info('Deepgram WebSocket closed', { callSid: this.callSid });
     });
     
     this.deepgramWs.on('error', (error) => {
-      logger.error('❌ [Deepgram] WebSocket error', { callSid: this.callSid, error: error.message });
+      logger.error('Deepgram WebSocket error', { callSid: this.callSid, error: error.message });
     });
     
     this.deepgramWs.on('message', async (data) => {
@@ -294,9 +293,9 @@ class WebSocketOrchestrator extends EventEmitter {
         const message = JSON.parse(data);
         const timestamp = Date.now();
         
-        // DEBUG: Log all Deepgram events for investigation
+        // Log all Deepgram events for investigation
         if (message.type !== 'Results' || message.channel?.alternatives?.[0]?.transcript) {
-          logger.debug('🎤 [DEBUG-DEEPGRAM] Raw event received', {
+          logger.debug('Deepgram event received', {
             callSid: this.callSid,
             timestamp: new Date().toISOString(),
             timestampMs: timestamp,
@@ -339,7 +338,7 @@ class WebSocketOrchestrator extends EventEmitter {
             if (this.speechEndTimer) {
               clearTimeout(this.speechEndTimer);
               this.speechEndTimer = null;
-              logger.debug('⏰ [DEBUG] Cleared speech end timer due to final transcript', {
+              logger.debug('Cleared speech end timer due to final transcript', {
                 callSid: this.callSid,
                 transcript
               });
@@ -355,7 +354,7 @@ class WebSocketOrchestrator extends EventEmitter {
             hasStoredTranscript: !!this.lastProcessedTranscript
           });
           
-          logger.info('🔚 [Deepgram] UtteranceEnd detected.', { callSid: this.callSid });
+          logger.debug('Deepgram UtteranceEnd detected', { callSid: this.callSid });
           if (this.speechEndTimer) {
             clearTimeout(this.speechEndTimer);
             this.speechEndTimer = null;
@@ -367,7 +366,7 @@ class WebSocketOrchestrator extends EventEmitter {
         }
 
       } catch (error) {
-      logger.error('❌ [Deepgram] Message processing error', { callSid: this.callSid, error: error.message });
+      logger.error('Deepgram message processing error', { callSid: this.callSid, error: error.message });
       }
     });
   }
@@ -380,7 +379,7 @@ class WebSocketOrchestrator extends EventEmitter {
     
     // Skip if in barge-in cooldown
     if (this.isBargeInCooldown) {
-      logger.info('🔇 [Speech] Ignoring speech start - in barge-in cooldown', { callSid: this.callSid });
+      logger.debug('Ignoring speech start - in barge-in cooldown', { callSid: this.callSid });
       return;
     }
 
@@ -389,7 +388,7 @@ class WebSocketOrchestrator extends EventEmitter {
       // Check if we're within the grace period after starting to speak
       const timeSinceSpeechStart = now - this.audioDeliveryMetrics.startTime;
       if (timeSinceSpeechStart < this.BARGE_IN_GRACE_PERIOD_MS) {
-        logger.info('🕐 [Speech] Ignoring speech start - within grace period', { 
+        logger.debug('Ignoring speech start - within grace period', { 
           callSid: this.callSid,
           timeSinceSpeechStart,
           gracePeriod: this.BARGE_IN_GRACE_PERIOD_MS
@@ -399,7 +398,7 @@ class WebSocketOrchestrator extends EventEmitter {
 
       const correlationId = this.logStateTransition(this.callState, 'BARGE_IN_DETECTED', 'User interrupted agent speech');
       
-      logger.info('🛑 [Barge-in] User interrupted - stopping agent speech and starting cooldown', {
+      logger.info('User interrupted - stopping agent speech', {
         callSid: this.callSid,
         correlationId,
         agentWasSpeaking: this.lastSpokenText,
@@ -414,7 +413,7 @@ class WebSocketOrchestrator extends EventEmitter {
       this.isBargeInCooldown = true;
       setTimeout(() => {
         this.isBargeInCooldown = false;
-        logger.info('✅ [Barge-in] Cooldown period ended', { callSid: this.callSid });
+        logger.debug('Barge-in cooldown period ended', { callSid: this.callSid });
       }, this.BARGE_IN_COOLDOWN);
     }
 
@@ -444,7 +443,7 @@ class WebSocketOrchestrator extends EventEmitter {
     
     // Prevent duplicate processing
     if (transcript === this.lastProcessedTranscript && (timeSinceLastInput < 2000)) {
-      logger.debug('🔄 [Turn-taking] Ignoring duplicate transcript', { 
+      logger.debug('Ignoring duplicate transcript', { 
         callSid: this.callSid, 
         transcript,
         timeSinceLastInput
@@ -457,7 +456,7 @@ class WebSocketOrchestrator extends EventEmitter {
       this.logTranscriptEvent('TRANSCRIPT_FILTERED_SHORT', transcript, {
         reason: 'Transcript too short, likely noise'
       });
-      logger.debug('🔇 [Turn-taking] Ignoring very short transcript (likely noise)', {
+      logger.debug('Ignoring very short transcript (likely noise)', {
         callSid: this.callSid,
         transcript
       });
@@ -471,7 +470,7 @@ class WebSocketOrchestrator extends EventEmitter {
         minTimeBetween: this.MIN_TIME_BETWEEN_RESPONSES,
         actualTimeBetween: timeSinceLastInput
       });
-      logger.debug('⏱️ [Turn-taking] Too soon after last input, ignoring', { 
+      logger.debug('Too soon after last input, ignoring', { 
         callSid: this.callSid,
         timeSinceLastInput,
         minRequired: this.MIN_TIME_BETWEEN_RESPONSES
@@ -488,7 +487,7 @@ class WebSocketOrchestrator extends EventEmitter {
         queueSize: this.pendingUserInputs.length
       });
       
-      logger.info('🤐 [Turn-taking] Agent busy, saving transcript for later', { 
+      logger.debug('Agent busy, saving transcript for later', { 
         callSid: this.callSid,
         isSpeaking: this.isSpeaking,
         processingLLM: this.processingLLM,
@@ -531,7 +530,7 @@ class WebSocketOrchestrator extends EventEmitter {
     if (virusQuestionPattern.test(aiResponse)) {
       this.identificationAttempts++;
       if (this.identificationAttempts > 3) {
-        logger.warn('⚠️ [PATTERN] Repetitive scam pattern detected', {
+        logger.warn('Repetitive pattern detected', {
           callSid: this.callSid,
           attempts: this.identificationAttempts,
           lastResponses: this.conversationPatterns.slice(-3)
@@ -546,7 +545,7 @@ class WebSocketOrchestrator extends EventEmitter {
       for (let i = 0; i < recent.length - 1; i++) {
         for (let j = i + 1; j < recent.length; j++) {
           if (recent[i].ai === recent[j].ai && recent[i].user.includes('what')) {
-            logger.warn('⚠️ [PATTERN] Repetitive confusion loop detected', {
+            logger.warn('Repetitive confusion loop detected', {
               callSid: this.callSid,
               repeatedResponse: recent[i].ai.substring(0, 50),
               pattern: this.conversationPatterns.slice(-4)
@@ -566,7 +565,7 @@ class WebSocketOrchestrator extends EventEmitter {
   async processWithLLM(userInput) {
     if (!userInput.trim() || this.processingLLM) {
       if(this.processingLLM) {
-        logger.warn('🚫 [LLM] Attempted to process while another process was running.', {
+        logger.warn('Attempted to process while another LLM process was running', {
           callSid: this.callSid,
           userInput,
           currentResponseId: this.currentResponseId
@@ -585,7 +584,7 @@ class WebSocketOrchestrator extends EventEmitter {
     
     const llmStartTime = Date.now();
     
-    logger.info(`🧠 [LLM-INPUT] User said: "${userInput}"`, { 
+    logger.info(`User input: "${userInput}"`, { 
       callSid: this.callSid,
       responseId: this.currentResponseId,
       correlationId,
@@ -601,7 +600,7 @@ class WebSocketOrchestrator extends EventEmitter {
     
     try {
       if (this.USE_STREAMING_PIPELINE) {
-        logger.info('🚀 [STREAMING] Using speculative TTS pipeline', {
+        logger.info('Using streaming TTS pipeline', {
           callSid: this.callSid,
           correlationId
         });
@@ -613,7 +612,7 @@ class WebSocketOrchestrator extends EventEmitter {
         const llmEndTime = Date.now();
         const llmProcessingTime = llmEndTime - llmStartTime;
         
-        logger.info(`🧠 [LLM-OUTPUT] AI response: "${response.text}"`, { 
+        logger.info(`AI response: "${response.text}"`, { 
           callSid: this.callSid,
           responseId: this.currentResponseId,
           correlationId,
@@ -630,7 +629,7 @@ class WebSocketOrchestrator extends EventEmitter {
         if (isRepetitive && this.identificationAttempts > 2) {
           // Break the loop with a different approach
           const breakLoopResponse = "I understand there may be some confusion. This is Ben from Microsoft Support regarding a critical security issue on your computer. If you're not interested in protecting your data, I'll end this call.";
-          logger.info('🔄 [PATTERN] Breaking repetitive loop with clarification', {
+          logger.info('Breaking repetitive loop with clarification', {
             callSid: this.callSid,
             originalResponse: response.text.slice(0, 50),
             breakResponse: breakLoopResponse
@@ -646,7 +645,7 @@ class WebSocketOrchestrator extends EventEmitter {
         }
       }
     } catch (error) {
-      logger.error('❌ [LLM] Processing error', { 
+      logger.error('LLM processing error', { 
         callSid: this.callSid, 
         error: error.message, 
         responseId: this.currentResponseId,
@@ -656,7 +655,7 @@ class WebSocketOrchestrator extends EventEmitter {
       await this.streamToTTS("Ugh, sorry! I'm having some technical issues right now. This is so frustrating!");
     } finally {
       const finalTime = Date.now();
-      logger.info('🏁 [LLM] Processing finished.', { 
+      logger.debug('LLM processing finished', { 
         callSid: this.callSid, 
         responseId: this.currentResponseId,
         correlationId,
@@ -666,7 +665,7 @@ class WebSocketOrchestrator extends EventEmitter {
       
       // Process any pending user inputs
       if (this.pendingUserInputs.length > 0) {
-        logger.info('📥 [Turn-taking] Processing pending user inputs', {
+        logger.debug('Processing pending user inputs', {
           callSid: this.callSid,
           pendingCount: this.pendingUserInputs.length
         });
@@ -685,7 +684,7 @@ class WebSocketOrchestrator extends EventEmitter {
   async streamLLMToTTS(userInput, correlationId, startTime) {
     const streamId = `stream-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
     
-    logger.info('🚀 [STREAMING] Starting real-time LLM → TTS pipeline', {
+    logger.info('Starting real-time LLM → TTS pipeline', {
       callSid: this.callSid,
       streamId,
       correlationId,
@@ -719,7 +718,7 @@ class WebSocketOrchestrator extends EventEmitter {
         .toFormat('mulaw')
         .on('error', (err) => {
           if (!err.message.includes('SIGKILL')) {
-            logger.error('❌ [STREAMING] FFmpeg error', {
+            logger.error('FFmpeg streaming error', {
               streamId,
               error: err.message
             });
@@ -731,7 +730,7 @@ class WebSocketOrchestrator extends EventEmitter {
       // Handle audio from ElevenLabs → FFmpeg → Twilio
       elevenLabsStream.on('audio', (audioBuffer) => {
         if (!this.isSpeaking || this.isUserSpeaking) {
-          logger.debug('🛑 [STREAMING] Dropping audio chunk due to interruption', { streamId });
+          logger.debug('Dropping audio chunk due to interruption', { streamId });
           return;
         }
         
@@ -755,7 +754,7 @@ class WebSocketOrchestrator extends EventEmitter {
           }));
           
           if (audioChunksSent % 10 === 0) {
-            logger.debug('🔊 [STREAMING] Audio progress', {
+            logger.debug('Audio streaming progress', {
               streamId,
               audioChunksSent,
               textLength: fullResponseText.length
@@ -771,7 +770,7 @@ class WebSocketOrchestrator extends EventEmitter {
       for await (const textChunk of llmStream) {
         // Check for interruption
         if (this.isUserSpeaking) {
-          logger.info('🛑 [STREAMING] User interrupted, stopping pipeline', {
+          logger.info('User interrupted, stopping streaming pipeline', {
             streamId,
             textGenerated: fullResponseText.length
           });
@@ -780,7 +779,7 @@ class WebSocketOrchestrator extends EventEmitter {
         
         // Skip special markers
         if (textChunk === '\n[CORRECTION]\n') {
-          logger.warn('⚠️ [STREAMING] Correction marker detected', { streamId });
+          logger.warn('Correction marker detected in stream', { streamId });
           fullResponseText = ''; // Reset for corrected version
           continue;
         }
@@ -796,7 +795,7 @@ class WebSocketOrchestrator extends EventEmitter {
         
         // Log progress
         if (chunksReceived % 5 === 0) {
-          logger.debug('📝 [STREAMING] Text generation progress', {
+          logger.debug('Text generation progress', {
             streamId,
             chunksReceived,
             currentLength: fullResponseText.length,
@@ -827,7 +826,7 @@ class WebSocketOrchestrator extends EventEmitter {
       
       const endTime = Date.now();
       
-      logger.info('✅ [STREAMING] Pipeline completed', {
+      logger.info('Streaming pipeline completed', {
         callSid: this.callSid,
         streamId,
         correlationId,
@@ -847,7 +846,7 @@ class WebSocketOrchestrator extends EventEmitter {
       
       if (isRepetitive && this.identificationAttempts > 2) {
         const breakLoopResponse = "I understand there may be some confusion. This is Ben from Microsoft Support regarding a critical security issue on your computer. If you're not interested in protecting your data, I'll end this call.";
-        logger.info('🔄 [STREAMING] Breaking repetitive loop', {
+        logger.info('Breaking repetitive loop in stream', {
           streamId,
           originalResponse: fullResponseText.substring(0, 50)
         });
@@ -859,7 +858,7 @@ class WebSocketOrchestrator extends EventEmitter {
       }
       
     } catch (error) {
-      logger.error('❌ [STREAMING] Pipeline error', {
+      logger.error('Streaming pipeline error', {
         callSid: this.callSid,
         streamId,
         error: error.message,
@@ -882,7 +881,7 @@ class WebSocketOrchestrator extends EventEmitter {
       this.isSpeaking = false;
       this.processingLLM = false;
       
-      logger.info('🧹 [STREAMING] Cleanup completed', {
+      logger.debug('Streaming cleanup completed', {
         streamId,
         finalResponseLength: fullResponseText.length
       });
@@ -916,7 +915,7 @@ class WebSocketOrchestrator extends EventEmitter {
       correlationId
     });
     
-    logger.info('🗣️ [State Change] isSpeaking', { 
+    logger.debug('State change: isSpeaking', { 
       callSid: this.callSid, 
       from: oldState, 
       to: true, 
@@ -967,10 +966,10 @@ class WebSocketOrchestrator extends EventEmitter {
       this.ffmpegCommand.on('error', (err, stdout, stderr) => {
         // Don't log "ffmpeg was killed with signal SIGKILL" as an error
         if (err.message.includes('SIGKILL')) {
-            logger.info('🔪 [FFMPEG] Process killed intentionally for barge-in', { callSid: this.callSid });
+            logger.debug('FFmpeg process killed for barge-in', { callSid: this.callSid });
             return;
         }
-        logger.error('❌ [FFMPEG] Error during transcoding', { 
+        logger.error('FFmpeg transcoding error', { 
             callSid: this.callSid, 
             error: err.message,
             stdout,
@@ -980,7 +979,7 @@ class WebSocketOrchestrator extends EventEmitter {
       });
 
       this.ffmpegCommand.on('end', () => {
-        logger.info('🏁 [FFMPEG] Transcoding finished', { callSid: this.callSid, responseId: this.currentResponseId });
+        logger.debug('FFmpeg transcoding finished', { callSid: this.callSid, responseId: this.currentResponseId });
         this.stopSpeaking();
       });
 
@@ -1041,13 +1040,13 @@ class WebSocketOrchestrator extends EventEmitter {
           correlationId
         });
         
-        logger.debug('🔊 [TTS] Audio playback transcoding completed', { callSid: this.callSid });
+        logger.debug('Audio playback transcoding completed', { callSid: this.callSid });
         const oldState = this.isSpeaking;
         this.isSpeaking = false;
         
         this.logStateTransition(this.callState, 'LISTENING', 'Audio playback completed, ready for user input');
         
-        logger.info('🗣️ [State Change] isSpeaking', { 
+        logger.debug('State change: isSpeaking', { 
           callSid: this.callSid, 
           from: oldState, 
           to: false, 
@@ -1067,14 +1066,14 @@ class WebSocketOrchestrator extends EventEmitter {
           correlationId
         });
         
-        logger.error('❌ [TTS] Transcoding pipeline error', { callSid: this.callSid, error: err.message });
+        logger.error('TTS transcoding pipeline error', { callSid: this.callSid, error: err.message });
         const oldState = this.isSpeaking;
         this.isSpeaking = false;
         this.lastAgentUtteranceEndTime = errorTime;
         
         this.logStateTransition(this.callState, 'LISTENING', 'Audio transcoding error, returning to listening state');
         
-        logger.info('🗣️ [State Change] isSpeaking', { 
+        logger.debug('State change: isSpeaking', { 
           callSid: this.callSid, 
           from: oldState, 
           to: false, 
@@ -1094,13 +1093,13 @@ class WebSocketOrchestrator extends EventEmitter {
         correlationId
       });
       
-      logger.error('❌ [TTS] Streaming error', { callSid: this.callSid, error: error.message });
+      logger.error('TTS streaming error', { callSid: this.callSid, error: error.message });
       const oldState = this.isSpeaking;
       this.isSpeaking = false;
       
       this.logStateTransition(this.callState, 'LISTENING', 'TTS synthesis error, returning to listening state');
       
-      logger.info('🗣️ [State Change] isSpeaking', { 
+      logger.debug('State change: isSpeaking', { 
         callSid: this.callSid, 
         from: oldState, 
         to: false, 
@@ -1133,7 +1132,7 @@ class WebSocketOrchestrator extends EventEmitter {
       correlationId
     });
 
-    logger.info('🗣️ [State Change] isSpeaking', { 
+    logger.debug('State change: isSpeaking', { 
       callSid: this.callSid, 
       from: oldState, 
       to: false, 
@@ -1152,7 +1151,7 @@ class WebSocketOrchestrator extends EventEmitter {
     
     if (this.twilioWs?.readyState === WebSocket.OPEN) {
       this.twilioWs.send(JSON.stringify({ event: 'clear', streamSid: this.streamSid }));
-      logger.info('🔊 [TTS] Playback cleared for barge-in', { 
+      logger.debug('TTS playback cleared for barge-in', { 
         callSid: this.callSid,
         responseId: this.currentResponseId,
         correlationId
@@ -1162,7 +1161,7 @@ class WebSocketOrchestrator extends EventEmitter {
 
   stopFfmpeg() {
     if (this.ffmpegCommand) {
-      logger.info('🔪 [FFMPEG] Attempting to kill FFMPEG process', { callSid: this.callSid });
+      logger.debug('Stopping FFmpeg process', { callSid: this.callSid });
       this.ffmpegCommand.kill('SIGKILL');
       this.ffmpegCommand = null;
     }
@@ -1173,7 +1172,7 @@ class WebSocketOrchestrator extends EventEmitter {
    */
   stopStreaming() {
     // This will be handled by the streaming pipeline checking isUserSpeaking flag
-    logger.info('🛑 [STREAMING] Stopping all streaming processes', { 
+    logger.info('Stopping all streaming processes', { 
       callSid: this.callSid,
       wasStreaming: this.isSpeaking
     });
@@ -1201,7 +1200,7 @@ class WebSocketOrchestrator extends EventEmitter {
    * Closes all connections and emits an event to signal the call has ended.
    */
   cleanup() {
-    logger.info('🧹 [Cleanup] Closing all connections', { 
+    logger.info('Closing all connections', { 
       callSid: this.callSid,
       finalState: this.callState,
       pendingInputs: this.pendingUserInputs.length

@@ -1,4 +1,5 @@
 const { Redis } = require('@upstash/redis');
+const logger = require('../utils/logger');
 
 if (!process.env.UPSTASH_REDIS_REST_URL || !process.env.UPSTASH_REDIS_REST_TOKEN) {
   throw new Error('Upstash Redis environment variables are not set.');
@@ -29,9 +30,9 @@ const warmUpConnection = async () => {
   try {
     await redis.ping();
     isConnected = true;
-    console.log('Redis connection established and warmed up');
+    logger.info('Redis connection established and warmed up');
   } catch (error) {
-    console.error('Failed to warm up Redis connection:', error.message);
+    logger.error('Failed to warm up Redis connection:', error);
     isConnected = false;
   }
 };

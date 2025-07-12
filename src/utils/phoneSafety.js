@@ -59,9 +59,6 @@ const isSafeToCall = (phoneNumberE164) => {
          return { isSafe: false, reason: 'Potential emergency number pattern' };
     }
 
-    // TODO: Add more sophisticated checks (e.g., library like google-libphonenumber if feasible)
-    // TODO: Implement allowlist if needed
-
     return { isSafe: true, reason: null };
 };
 

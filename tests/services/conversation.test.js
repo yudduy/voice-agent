@@ -39,7 +39,6 @@ process.env.SUPABASE_ANON_KEY = 'test-key';
 jest.mock('../../src/repositories/historyRepository');
 jest.mock('../../src/services/cacheService');
 jest.mock('../../src/utils/logger');
-jest.mock('../../src/services/topicTracker');
 jest.mock('../../src/config/redis');
 jest.mock('../../src/config/ai', () => ({
   openAI: {
@@ -53,7 +52,6 @@ jest.mock('../../src/config/ai', () => ({
 const cacheService = require('../../src/services/cacheService');
 const promptUtils = require('../../src/utils/prompt');
 const aiConfig = require('../../src/config/ai');
-const TopicTracker = require('../../src/services/topicTracker');
 const conversationService = require('../../src/services/conversation');
 
 describe('Refactored Conversation Service', () => {
