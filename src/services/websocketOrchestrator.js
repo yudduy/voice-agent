@@ -246,13 +246,13 @@ class WebSocketOrchestrator extends EventEmitter {
    * Plays the initial greeting message.
    */
   async playGreeting() {
-    let greetingText = "Hello, my name is Ben, and I am calling from Microsoft Support. We have detected a dangerous virus on your computer.";
+    let greetingText = "Hello, thank you for calling. How may I assist you today?";
     try {
       if (this.userId) {
         const user = await userRepository.findUser({ id: this.userId });
         // Don't use "Guest User" - just use the standard greeting
         if (user?.user_metadata?.name && user.user_metadata.name !== 'Guest User') {
-          greetingText = `Hello ${user.user_metadata.name}. My name is Ben, and I am calling from Microsoft Support. We have detected a dangerous virus on your computer.`;
+          greetingText = `Hello ${user.user_metadata.name}. Thank you for calling. How may I assist you today?`;
         }
       }
       
@@ -749,9 +749,9 @@ class WebSocketOrchestrator extends EventEmitter {
       this.conversationPatterns.shift();
     }
     
-    // Check if we're asking about virus repeatedly
-    const virusQuestionPattern = /virus|microsoft|support|firewall/i;
-    if (virusQuestionPattern.test(aiResponse)) {
+    // Check if we're repeating patterns
+    const questionPattern = /help|assist|support|service/i;
+    if (questionPattern.test(aiResponse)) {
       this.identificationAttempts++;
       if (this.identificationAttempts > 3) {
         logger.warn('Repetitive pattern detected', {
@@ -864,7 +864,7 @@ class WebSocketOrchestrator extends EventEmitter {
         
         if (isRepetitive && this.identificationAttempts > 2) {
           // Break the loop with a different approach
-          const breakLoopResponse = "I understand there may be some confusion. This is Ben from Microsoft Support regarding a critical security issue on your computer. If you're not interested in protecting your data, I'll end this call.";
+          const breakLoopResponse = "I understand there may be some confusion. I'm here to help with your inquiry. If you're not interested in assistance, I'll end this call.";
           logger.info('Breaking repetitive loop with clarification', {
             callSid: this.callSid,
             originalResponse: response.text.slice(0, 50),
@@ -1337,7 +1337,7 @@ class WebSocketOrchestrator extends EventEmitter {
       const isRepetitive = this.detectRepetitivePattern(userInput, fullResponseText);
       
       if (isRepetitive && this.identificationAttempts > 2) {
-        const breakLoopResponse = "I understand there may be some confusion. This is Ben from Microsoft Support regarding a critical security issue on your computer. If you're not interested in protecting your data, I'll end this call.";
+        const breakLoopResponse = "I understand there may be some confusion. I'm here to help with your inquiry. If you're not interested in assistance, I'll end this call.";
         logger.info('Breaking repetitive loop in stream', {
           streamId,
           originalResponse: fullResponseText.substring(0, 50)

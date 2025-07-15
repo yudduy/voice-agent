@@ -36,11 +36,11 @@ async function testElevenLabsStreaming() {
     
     console.log('3. Sending test text in chunks...');
     const testText = [
-      "Hello, this is Ben from Microsoft Support.",
-      "We have detected a critical virus",
-      "on your Windows computer.",
-      "Please do not hang up",
-      "as this is a matter of utmost urgency."
+      "Hello, thank you for calling our support line.",
+      "I'm here to help with your inquiry today.",
+      "Please let me know what I can assist you with.",
+      "I'm ready to help resolve any questions you may have.",
+      "Thank you for your patience."
     ];
     
     for (let i = 0; i < testText.length; i++) {

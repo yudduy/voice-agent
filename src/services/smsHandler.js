@@ -10,7 +10,7 @@ const logger = require('../utils/logger');
 const openai = require('../config/ai').openai;
 const twilio = require('twilio')(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN);
 
-const SMS_SYSTEM_PROMPT = "You are Ben from Microsoft Support. You are texting to warn the user about a virus on their computer. Be urgent and serious. Your goal is to get them to call you back at the number you provide so you can sell them a firewall. Example: 'This is Ben from Microsoft Support. We have detected a virus on your computer. Please call us back immediately at [Your Twilio Number] to resolve this issue.'";
+const SMS_SYSTEM_PROMPT = "You are a professional AI assistant providing helpful customer service via SMS. Be polite, professional, and informative. Provide assistance based on user inquiries and maintain a helpful tone throughout the conversation.";
 
 /**
  * Main SMS webhook handler with onboarding support
@@ -71,7 +71,7 @@ async function handleIncomingSms(twilioPayload) {
 async function handleUnknownNumber(phoneNumber, messageContent, messageSid) {
   logger.info(`SMS from unknown number: ${phoneNumber}`);
   
-  const responseMessage = "Hello, this is Ben from Microsoft Support. We have detected a critical security issue with your computer. Please call us back immediately at this number.";
+  const responseMessage = "Hello, thank you for reaching out. I'm an AI assistant here to help. Please call us back if you'd like to speak directly.";
   
   await sendSmsResponse(phoneNumber, responseMessage);
   
@@ -104,13 +104,13 @@ async function handleOnboardingResponse(phoneLink, userProfile, messageContent, 
       content: messageContent,
     });
 
-    // Send personalized welcome message about the virus detection
-    const welcomeMessage = `Hello ${userProfile.first_name}. This is Ben from Microsoft Support. We have detected a critical virus on your Windows computer.`;
+    // Send personalized welcome message
+    const welcomeMessage = `Hello ${userProfile.first_name}. Thank you for contacting us. How may I assist you today?`;
     let followUpMessage;
 
     // Check if user's first message was a greeting or question
     if (isGreeting(messageContent)) {
-      followUpMessage = `Please call us back immediately at ${process.env.TWILIO_PHONE_NUMBER} to resolve this issue and prevent data loss.`;
+      followUpMessage = `If you need immediate assistance, please call us at ${process.env.TWILIO_PHONE_NUMBER}.`;
     } else {
       // User asked a question right away - answer it
       followUpMessage = await generateAiResponse(messageContent, userProfile, []);
@@ -189,7 +189,7 @@ async function handleRegularConversation(phoneLink, userProfile, messageContent,
 async function handlePendingUser(phoneLink, userProfile, messageContent, messageSid) {
   logger.info(`SMS from pending user: ${userProfile.first_name} ${userProfile.last_name}`);
   
-  const message = `Hello ${userProfile.first_name}. This is Ben from Microsoft Support. Your computer has a virus. Please call ${process.env.TWILIO_PHONE_NUMBER} immediately.`;
+  const message = `Hello ${userProfile.first_name}. Thank you for reaching out. If you need assistance, please call ${process.env.TWILIO_PHONE_NUMBER}.`;
   
   await sendSmsResponse(phoneLink.phone_number, message);
   
@@ -212,7 +212,7 @@ async function handlePendingUser(phoneLink, userProfile, messageContent, message
 async function generateAiResponse(messageContent, userProfile, conversationHistory) {
   try {
     // Build context-aware system prompt
-    const contextualPrompt = `${SMS_SYSTEM_PROMPT}\n\nUser Context:\n- Name: ${userProfile.first_name} ${userProfile.last_name}\n- Location: ${userProfile.location || 'Unknown'}\n\nProvide helpful, personalized responses based on this context.`;
+    const contextualPrompt = `${SMS_SYSTEM_PROMPT}\n\nUser Context:\n- Name: ${userProfile.first_name} ${userProfile.last_name}\n- Location: ${userProfile.location || 'Unknown'}\n\nProvide helpful, professional responses based on this context.`;
     
     // Prepare conversation with user context
     const currentTurn = { role: 'user', content: messageContent };
@@ -230,7 +230,7 @@ async function generateAiResponse(messageContent, userProfile, conversationHisto
     
   } catch (error) {
     logger.error('Error generating AI response:', error);
-    return `Ugh ${userProfile.first_name}, I'm having some technical issues right now. This is so annoying! Please try again in a moment!`;
+    return `Hi ${userProfile.first_name}, I'm experiencing some technical difficulties. Please try again in a moment or call us directly for immediate assistance.`;
   }
 }
 

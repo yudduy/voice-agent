@@ -1,64 +1,50 @@
-# Caller AI 📞
+# Voice AI Assistant 🎤
 
-A voice-first AI agent designed for outbound calling campaigns with dynamic persona support.
+A professional voice-first AI assistant system designed for intelligent outbound calling campaigns with dynamic conversation management.
 
-* **Dynamic Personas**: Easily configurable personas for different campaigns (currently: "Ben" from Microsoft Support).
-* **Smart Call Logic**: Handles various call scenarios, user responses, and natural conversation flow.
-* **Voice Pipeline**: **DeepGram Nova STT → OpenAI GPT-4.1-nano → ElevenLabs TTS**
-* **Storage**: Long-term memory in **Supabase Postgres**, short-term context in **Upstash Redis**
-* **Monitoring**: Comprehensive call/transcript logging with detailed state tracking
-* **Barge-in Protection**: Advanced interruption handling with grace periods to prevent false triggers
+## Features
+
+* **Advanced Voice Pipeline**: Real-time speech processing with Deepgram STT → OpenAI GPT → ElevenLabs TTS
+* **Intelligent Conversation Management**: Context-aware dialogue with natural conversation flow
+* **Robust Architecture**: Enterprise-grade scalability with Supabase PostgreSQL and Redis caching
+* **Real-time Processing**: WebSocket-based media streaming with advanced barge-in handling
+* **Comprehensive Monitoring**: Detailed call logging, performance metrics, and state tracking
+* **Professional Voice Synthesis**: High-quality text-to-speech with multiple provider fallbacks
 
 ---
 
-## Voice Pipeline Architecture
+## Architecture Overview
 
 | Component | Technology | Purpose |
 |-----------|------------|---------|
-| **Speech-to-Text** | Groq Whisper v3 (primary) + Twilio STT (fallback) | High-accuracy transcription with recording |
-| **Conversation AI** | OpenAI GPT-4.1-nano (150 tokens) | Dynamic and context-aware persona handling |
-| **Text-to-Speech** | ElevenLabs Flash v2.5 (primary) + Hyperbolic (fallback) + Twilio (final) | Premium voice synthesis optimized for speed |
+| **Speech Recognition** | Deepgram Nova-3 (primary) + Groq Whisper (fallback) | Real-time speech-to-text with high accuracy |
+| **AI Processing** | OpenAI GPT-4 Turbo | Intelligent conversation management |
+| **Voice Synthesis** | ElevenLabs Flash v2.5 (primary) + Twilio (fallback) | Natural text-to-speech generation |
 | **Telephony** | Twilio Voice API | Reliable call handling and audio streaming |
-| **Database** | Supabase Postgres | User profiles, call history, and conversation logs |
-| **Cache** | Upstash Redis | Real-time call state and conversation context |
-
-## Current Persona: "Ben" from Microsoft Support
-
-The AI is currently configured as "Ben," a technical support specialist who:
-- Claims to be calling from Microsoft Support
-- Reports a detected virus on the user's computer
-- Uses urgent, professional language with Indian accent patterns
-- Follows a multi-step conversational approach to build trust
-- Maintains short, natural responses (1-2 sentences max)
-
-### Conversation Flow Strategy
-1. **Initial Contact**: Professional introduction with virus warning
-2. **Verification**: Asks user to confirm computer details
-3. **Escalation**: Builds urgency about the threat
-4. **Solution Offer**: Proposes technical support service
-5. **Payment Request**: Requests payment for "firewall protection"
+| **Database** | Supabase PostgreSQL | User profiles, call history, conversation logs |
+| **Cache** | Redis | Real-time conversation state and performance optimization |
 
 ---
 
-## Key Features
+## Technical Capabilities
 
-### Advanced Barge-in Handling
-- **Grace Period**: 400ms buffer prevents false interruption detection
-- **Cooldown System**: 600ms cooldown after barge-in to prevent loops
-- **FFmpeg Management**: Proper cleanup of audio processes during interruptions
-- **State Tracking**: Detailed logging of all speech events and transitions
-
-### Conversation Management
-- **Intent Classification**: Recognizes confusion, repetition requests, and scam responses
-- **Context Awareness**: Maintains conversation history and user state
-- **Natural Flow**: Avoids robotic responses with conversational patterns
-- **Error Recovery**: Handles various user responses and edge cases
+### Advanced Call Management
+- **Intelligent Barge-in Handling**: Sophisticated interruption detection with grace periods
+- **Context-Aware Responses**: Maintains conversation history and user preferences
+- **Dynamic Flow Control**: Adaptive conversation routing based on user input
+- **Error Recovery**: Robust handling of various call scenarios and edge cases
 
 ### Performance Optimizations
-- **Streaming TTS**: Real-time audio generation and delivery
-- **Speculative Processing**: Parallel AI response generation
-- **Connection Pooling**: Efficient resource management
-- **Audio Caching**: Reduces latency for repeated phrases
+- **Streaming Audio Processing**: Real-time audio generation and delivery
+- **Connection Pooling**: Efficient resource management for high-volume operations
+- **Intelligent Caching**: Reduces latency through strategic audio and response caching
+- **Parallel Processing**: Concurrent AI response generation for optimal performance
+
+### Enterprise Features
+- **Comprehensive Logging**: Structured logging with correlation IDs and performance metrics
+- **Scalable Architecture**: Designed for high-volume concurrent operations
+- **Security Best Practices**: Secure credential management and data protection
+- **Monitoring & Analytics**: Real-time performance tracking and call analytics
 
 ---
 
@@ -66,40 +52,41 @@ The AI is currently configured as "Ben," a technical support specialist who:
 
 ### Prerequisites
 - Node.js 18+
-- Twilio Account (Voice API)
-- OpenAI API Key
-- ElevenLabs API Key
-- Groq API Key
-- Supabase Project
-- Upstash Redis Instance
+- Twilio Account with Voice API access
+- OpenAI API access
+- ElevenLabs API access
+- Supabase project
+- Redis instance (Upstash recommended)
 
 ### Installation
 ```bash
-# Clone and install dependencies
-git clone <repository-url>
-cd caller
+# Clone repository
+git clone https://github.com/your-username/voice-ai-assistant
+cd voice-ai-assistant
+
+# Install dependencies
 npm install
 
-# Configure environment variables
+# Configure environment
 cp .env.example .env
-# Edit .env with your API keys and credentials
+# Edit .env with your API credentials
 
-# Set up database
+# Initialize database
 npm run db:migrate
 
-# Start the server
+# Start the application
 npm start
 ```
 
 ### Testing
 ```bash
-# Test the voice pipeline
+# Test voice pipeline
 node scripts/voice-test.js
 
 # Test streaming functionality
 node scripts/test-streaming.js
 
-# Test database connectivity
+# Verify database connectivity
 node scripts/database-test.js
 ```
 
@@ -112,78 +99,84 @@ node scripts/database-test.js
 # Core Services
 TWILIO_ACCOUNT_SID=your_twilio_sid
 TWILIO_AUTH_TOKEN=your_twilio_token
+TWILIO_PHONE_NUMBER=your_twilio_number
 OPENAI_API_KEY=your_openai_key
 ELEVENLABS_API_KEY=your_elevenlabs_key
-GROQ_API_KEY=your_groq_key
+DEEPGRAM_API_KEY=your_deepgram_key
 
-# Database
+# Database & Cache
 SUPABASE_URL=your_supabase_url
-SUPABASE_ANON_KEY=your_supabase_key
-
-# Cache
+SUPABASE_SERVICE_ROLE_KEY=your_supabase_key
 UPSTASH_REDIS_REST_URL=your_redis_url
 UPSTASH_REDIS_REST_TOKEN=your_redis_token
 
-# AI Configuration
-AI_MAX_TOKENS=150
-AI_STREAMING_MAX_TOKENS=200
-AI_TEMPERATURE=0.7
+# Application Settings
+WEBHOOK_BASE_URL=your_webhook_url
+ENABLE_MEDIA_STREAMS=true
 ```
 
-### Persona Customization
-The AI persona is defined in `src/config/ai.js`. To modify the character:
-
-1. Update the `systemPrompt` with new character details
-2. Adjust conversation flow logic in `src/services/conversation.js`
-3. Modify initial greetings in webhook handlers
-4. Update SMS templates in `src/services/smsHandler.js`
+### AI Configuration
+The AI assistant behavior is configured in `src/config/ai.js`. Key settings include:
+- Response length and temperature
+- Conversation flow parameters
+- Voice synthesis preferences
+- Context management settings
 
 ---
 
-## Architecture
+## System Architecture
 
 ### Core Components
 - **WebSocket Orchestrator**: Manages real-time voice communication
-- **Conversation Service**: Handles AI response generation and context
-- **TTS Service**: Manages text-to-speech synthesis and streaming
-- **STT Service**: Handles speech recognition and transcription
-- **Database Repositories**: User and conversation data management
-- **Cache Service**: Real-time state and context management
+- **Conversation Service**: Handles AI response generation and context management
+- **Speech Services**: Manages STT/TTS processing and streaming
+- **Database Layer**: User data and conversation persistence
+- **Cache Layer**: Real-time state management and performance optimization
 
 ### Call Flow
-1. **Incoming Call**: Twilio webhook initiates connection
-2. **User Lookup**: Database query for caller information
-3. **Greeting**: AI introduces itself with persona
-4. **Conversation Loop**: STT → AI Processing → TTS → Audio Delivery
-5. **Barge-in Handling**: Interrupt detection and graceful recovery
-6. **Call Completion**: Cleanup and logging
+1. **Call Initiation**: Twilio webhook establishes connection
+2. **User Recognition**: Database lookup for caller information
+3. **Conversation Management**: Real-time STT → AI Processing → TTS pipeline
+4. **Audio Streaming**: Bidirectional audio with intelligent interruption handling
+5. **Session Management**: Context preservation and cleanup
 
 ---
 
-## Monitoring & Debugging
-
-### Logging
-- **Structured Logging**: JSON format with correlation IDs
-- **State Transitions**: Detailed call state tracking
-- **Performance Metrics**: Audio delivery and processing times
-- **Error Tracking**: Comprehensive error logging with context
+## Development
 
 ### Available Scripts
-- `scripts/voice-test.js`: Test voice pipeline components
-- `scripts/test-streaming.js`: Test streaming functionality
-- `scripts/database-test.js`: Verify database connectivity
-- `scripts/setup-user.js`: Create test users
+- `npm start` - Start production server
+- `npm run dev` - Start development server with auto-reload
+- `npm test` - Run comprehensive test suite
+- `npm run lint` - Code quality checks
+- `npm run db:migrate` - Database migrations
+
+### Testing Tools
+- `scripts/voice-test.js` - End-to-end voice pipeline testing
+- `scripts/test-streaming.js` - Stream processing validation
+- `scripts/database-test.js` - Database connectivity verification
+- `scripts/setup-user.js` - Test user creation
+
+### Performance Monitoring
+- Structured logging with performance metrics
+- Real-time call state tracking
+- Audio processing latency monitoring
+- Error tracking and alerting
 
 ---
 
 ## Contributing
 
 1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Test thoroughly
-5. Submit a pull request
+2. Create a feature branch (`git checkout -b feature/amazing-feature`)
+3. Commit your changes (`git commit -m 'Add amazing feature'`)
+4. Push to the branch (`git push origin feature/amazing-feature`)
+5. Open a Pull Request
 
 ## License
 
-This project is licensed under the MIT License - see the LICENSE file for details.
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
+## Support
+
+For technical support and documentation, please refer to the project wiki or create an issue in the GitHub repository.
