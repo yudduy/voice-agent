@@ -143,7 +143,14 @@ docs/_build/
 
 # Security and sensitive documentation
 SUPABASE.md
+CLAUDE.md
 .claude/
+
+# CI/CD workflows (contain sensitive configuration)
+.github/workflows/
+
+# Package lock files (not needed for public repos)
+package-lock.json
 
 # Python
 __pycache__/
