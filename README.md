@@ -1,10 +1,10 @@
-# Voice AI Assistant 🎤
+# Voice agent
 
-A professional voice-first AI assistant system designed for intelligent outbound calling campaigns with dynamic conversation management.
+A professional voice AI assistant system designed for intelligent outbound calling campaigns with dynamic conversation management.
 
 ## Features
 
-* **Advanced Voice Pipeline**: Real-time speech processing with Deepgram STT → OpenAI GPT → ElevenLabs TTS
+* **Voice Pipeline**: Real-time speech processing with Deepgram STT → OpenAI GPT → ElevenLabs TTS
 * **Intelligent Conversation Management**: Context-aware dialogue with natural conversation flow
 * **Robust Architecture**: Enterprise-grade scalability with Supabase PostgreSQL and Redis caching
 * **Real-time Processing**: WebSocket-based media streaming with advanced barge-in handling
@@ -18,7 +18,7 @@ A professional voice-first AI assistant system designed for intelligent outbound
 | Component | Technology | Purpose |
 |-----------|------------|---------|
 | **Speech Recognition** | Deepgram Nova-3 (primary) + Groq Whisper (fallback) | Real-time speech-to-text with high accuracy |
-| **AI Processing** | OpenAI GPT-4 Turbo | Intelligent conversation management |
+| **AI Processing** | OpenAI GPT-4.1-nano | Intelligent conversation management |
 | **Voice Synthesis** | ElevenLabs Flash v2.5 (primary) + Twilio (fallback) | Natural text-to-speech generation |
 | **Telephony** | Twilio Voice API | Reliable call handling and audio streaming |
 | **Database** | Supabase PostgreSQL | User profiles, call history, conversation logs |
@@ -61,7 +61,7 @@ A professional voice-first AI assistant system designed for intelligent outbound
 ### Installation
 ```bash
 # Clone repository
-git clone https://github.com/your-username/voice-ai-assistant
+git clone https://github.com/yudduy/voice-agent
 cd voice-ai-assistant
 
 # Install dependencies
