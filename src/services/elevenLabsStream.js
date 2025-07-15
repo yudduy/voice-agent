@@ -26,7 +26,7 @@ class ElevenLabsStreamService extends EventEmitter {
   async connect() {
     return new Promise((resolve, reject) => {
       const model = aiConfig.elevenLabs.defaultOptions.model_id || 'eleven_turbo_v2';
-      const wsUrl = `wss://api.elevenlabs.io/v1/text-to-speech/${this.voiceId}/stream-input?model_id=${model}`;
+      const wsUrl = `wss://api.elevenlabs.io/v1/text-to-speech/${this.voiceId}/stream-input?model_id=${model}&optimize_streaming_latency=2`;
       
       this.ws = new WebSocket(wsUrl, {
         headers: {

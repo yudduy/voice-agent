@@ -5,9 +5,9 @@ require('dotenv').config();
 
 const openAI = {
   apiKey: process.env.OPENAI_API_KEY,
-  model: process.env.OPENAI_MODEL || 'gpt-4o-mini', // Upgraded from nano for better conversations
-  streamingModel: process.env.OPENAI_STREAMING_MODEL || 'gpt-4o-mini', 
-  analysisModel: process.env.OPENAI_ANALYSIS_MODEL || process.env.OPENAI_MODEL || 'gpt-4o-mini',
+  model: process.env.OPENAI_MODEL || 'gpt-4.1-nano', // Latest nano model for optimal speed
+  streamingModel: process.env.OPENAI_STREAMING_MODEL || 'gpt-4.1-nano', 
+  analysisModel: process.env.OPENAI_ANALYSIS_MODEL || process.env.OPENAI_MODEL || 'gpt-4.1-nano',
   temperature: parseFloat(process.env.AI_TEMPERATURE || '0.7'), // Increased for more personality
   maxTokens: parseInt(process.env.AI_MAX_TOKENS || '150', 10), // Normal conversational length
   streamingMaxTokens: parseInt(process.env.AI_STREAMING_MAX_TOKENS || '200', 10), 

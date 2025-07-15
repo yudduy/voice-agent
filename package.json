@@ -11,11 +11,7 @@
     "test:coverage": "jest --coverage",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
-    "test:voice": "node scripts/voice-test.js",
-    "voice-test": "node scripts/unified-voice-test.js",
-    "voice-test:basic": "node scripts/unified-voice-test.js --mode=basic",
-    "voice-test:streaming": "node scripts/unified-voice-test.js --mode=streaming",
-    "voice-test:advanced": "node scripts/unified-voice-test.js --mode=advanced"
+    "test:voice": "node scripts/voice-test.js"
   },
   "jest": {
     "setupFilesAfterEnv": [
@@ -49,7 +45,9 @@
     "groq-sdk": "^0.19.0",
     "node-schedule": "^2.1.1",
     "openai": "^4.93.0",
+    "soundex": "^0.2.1",
     "twilio": "^4.15.0",
+    "uuid": "^11.1.0",
     "winston": "^3.10.0",
     "ws": "^8.18.3"
   },

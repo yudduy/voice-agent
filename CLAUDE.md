@@ -16,7 +16,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 3. Pitching a paid "Network Security Firewall" solution ($299)
 4. Attempting to collect credit card information
 
-**Voice Pipeline**: Twilio Media Streams → Deepgram Nova-2 STT → OpenAI GPT-4o-mini → ElevenLabs Turbo v2 TTS
+**Voice Pipeline**: Twilio Media Streams → Deepgram Nova-2 STT → OpenAI GPT-4.1-nano → ElevenLabs Turbo v2 TTS
 
 **🎯 Current Status**: Production-ready with real-time streaming enabled. Features proper turn-taking, barge-in detection, and duplicate prevention. Enhanced conversation awareness to prevent repetitive loops. The codebase has been fully updated to use the "Ben from Microsoft Support" persona consistently.
 
@@ -50,6 +50,12 @@ node scripts/database-test.js
 ```bash
 npm test -- tests/services/conversation.test.js
 npm test -- tests/repositories/userRepository.test.js
+npm test -- tests/services/websocketOrchestrator.test.js
+npm test -- tests/services/elevenLabsStream.test.js
+npm test -- tests/services/audioCache.test.js
+npm test -- tests/services/textToSpeech.test.js
+npm test -- tests/services/speechToText.test.js
+npm test -- tests/webhooks/mediaStreamWebhook.test.js
 npm test -- --testNamePattern="specific test"
 ```
 
@@ -68,7 +74,7 @@ npm test -- --testNamePattern="specific test"
    - User intent classification (confusion, scam responses, etc.)
    - Context-aware prompt generation
    - Response validation to maintain persona
-   - OpenAI GPT-4o-mini → Redis context (30 turn history)
+   - OpenAI GPT-4.1-nano → Redis context (30 turn history)
 5. **Speech Synthesis** → ElevenLabs TTS → FFmpeg transcoding → Twilio Media Stream
 6. **Continuous bidirectional audio** with proper turn-taking and interruption handling
 
@@ -144,7 +150,7 @@ ENABLE_MEDIA_STREAMS=true  # Required for real-time mode
 
 ### Optional
 ```env
-OPENAI_MODEL=gpt-4o-mini  # Default model
+OPENAI_MODEL=gpt-4.1-nano  # Default model
 ELEVENLABS_VOICE_ID=EXAVITQu4vr4xnSDxMaL  # Default voice
 TTS_PREFERENCE=elevenlabs
 SPEECH_RECOGNITION_PREFERENCE=deepgram  # For streaming mode

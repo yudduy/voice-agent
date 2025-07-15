@@ -2,6 +2,7 @@ const redis = require('../config/redis');
 const logger = require('../utils/logger');
 const { cache: cacheConfig } = require('../config');
 const crypto = require('crypto');
+const soundex = require('soundex');
 
 const CONVERSATION_TTL = cacheConfig.conversation.ttl;
 
@@ -55,12 +56,13 @@ async function getConversation(userId) {
 
 /**
  * Appends a new turn to the conversation history and resets the TTL.
+ * Implements dynamic context management for optimal performance.
  * @param {string} userId - The user's unique identifier.
  * @param {object} turn - The conversation turn to add (e.g., { role: 'user', content: 'Hello' }).
- * @param {number} maxTurns - The maximum number of turns to store.
+ * @param {number} maxTurns - The maximum number of turns to store (dynamic based on content).
  * @returns {Promise<void>}
  */
-async function appendConversation(userId, turn, maxTurns = 30) {
+async function appendConversation(userId, turn, maxTurns = null) {
   try {
     const key = getConversationKey(userId);
     const history = (await getConversation(userId)) || [];
@@ -73,7 +75,20 @@ async function appendConversation(userId, turn, maxTurns = 30) {
     
     history.push(turn);
     
-    // Trim the history to the maximum number of turns
+    // Dynamic context management: adjust maxTurns based on conversation progress
+    if (maxTurns === null) {
+      // Start with more context, reduce as conversation progresses
+      const totalTurns = history.length;
+      if (totalTurns <= 10) {
+        maxTurns = 30; // Keep full context early on
+      } else if (totalTurns <= 20) {
+        maxTurns = 20; // Medium context in middle
+      } else {
+        maxTurns = 12; // Minimal context for long conversations (6 exchanges)
+      }
+    }
+    
+    // Trim the history to the calculated maximum number of turns
     const trimmedHistory = history.slice(-maxTurns);
     
     // Ensure we're storing as JSON string for consistency
@@ -82,7 +97,10 @@ async function appendConversation(userId, turn, maxTurns = 30) {
     
     logger.debug(`Appended conversation turn for user ${userId}`, {
       turnRole: turn.role,
-      historyLength: trimmedHistory.length
+      historyLength: trimmedHistory.length,
+      totalTurnsEver: history.length,
+      maxTurnsApplied: maxTurns,
+      contextOptimized: history.length > maxTurns
     });
   } catch (error) {
     logger.error(`Error appending conversation for user ${userId} to Redis:`, error.message);
@@ -149,14 +167,55 @@ const RESPONSE_CACHE_TTL = parseInt(process.env.RESPONSE_CACHE_TTL || '3600'); /
 const RESPONSE_CACHE_PREFIX = 'response:';
 
 /**
+ * Generates a phonetic representation of text for cache matching
+ * @param {string} text - The text to convert to phonetic representation
+ * @returns {string} Phonetic representation
+ */
+const generatePhoneticKey = (text) => {
+  // Clean and normalize the text
+  const cleanText = text.toLowerCase()
+    .replace(/[^\w\s]/g, ' ') // Replace punctuation with spaces
+    .replace(/\s+/g, ' ') // Normalize multiple spaces
+    .trim();
+  
+  // Split into words and generate soundex codes
+  const words = cleanText.split(' ').filter(word => word.length > 0);
+  const phoneticCodes = words.map(word => {
+    // For very short words or common words, use exact match
+    if (word.length <= 2 || ['a', 'an', 'the', 'is', 'are', 'am', 'to', 'of', 'in', 'on', 'at', 'by'].includes(word)) {
+      return word;
+    }
+    // Use soundex for longer words
+    return soundex(word);
+  });
+  
+  return phoneticCodes.join(' ');
+};
+
+/**
  * Generates a cache key for an AI response based on user input and context
+ * Uses phonetic matching for better cache hit rates
  * @param {string} userInput - The user's input text
  * @param {Array} conversationHistory - Recent conversation history for context
+ * @param {boolean} usePhonetic - Whether to use phonetic matching (default: true)
  * @returns {string} The cache key
  */
-const generateResponseCacheKey = (userInput, conversationHistory = []) => {
-  // Normalize the input (lowercase, trim whitespace)
-  const normalizedInput = userInput.toLowerCase().trim();
+const generateResponseCacheKey = (userInput, conversationHistory = [], usePhonetic = true) => {
+  // Determine if this input should use phonetic matching
+  const shouldUsePhonetic = usePhonetic && shouldUsePhoneticCaching(userInput);
+  
+  let processedInput;
+  if (shouldUsePhonetic) {
+    // Use phonetic representation for better matching
+    processedInput = generatePhoneticKey(userInput);
+    logger.debug('Using phonetic cache key', {
+      original: userInput,
+      phonetic: processedInput
+    });
+  } else {
+    // Use exact normalization for specific patterns
+    processedInput = userInput.toLowerCase().trim();
+  }
   
   // Get last 2 turns for context (to distinguish same question in different contexts)
   const contextString = conversationHistory
@@ -164,16 +223,42 @@ const generateResponseCacheKey = (userInput, conversationHistory = []) => {
     .map(turn => `${turn.role}:${turn.content}`)
     .join('|');
   
-  // Create a hash from input + context
+  // Create a hash from processed input + context
   const hash = crypto.createHash('md5')
-    .update(normalizedInput + contextString)
+    .update(processedInput + contextString)
     .digest('hex');
   
-  return `${RESPONSE_CACHE_PREFIX}${hash}`;
+  const keyType = shouldUsePhonetic ? 'phonetic' : 'exact';
+  return `${RESPONSE_CACHE_PREFIX}${keyType}:${hash}`;
+};
+
+/**
+ * Determines if input should use phonetic caching
+ * @param {string} userInput - The user's input
+ * @returns {boolean} Whether to use phonetic matching
+ */
+const shouldUsePhoneticCaching = (userInput) => {
+  // Don't use phonetic for very short inputs
+  if (userInput.length < 4) {
+    return false;
+  }
+  
+  // Don't use phonetic for inputs with numbers or specific technical terms
+  if (/\d/.test(userInput) || /microsoft|computer|virus|firewall|credit|card/i.test(userInput)) {
+    return false;
+  }
+  
+  // Don't use phonetic for single-word responses
+  if (userInput.trim().split(/\s+/).length === 1) {
+    return false;
+  }
+  
+  return true;
 };
 
 /**
  * Get a cached AI response if available
+ * Uses phonetic matching with fallback to exact matching
  * @param {string} userInput - The user's input text
  * @param {Array} conversationHistory - Recent conversation history
  * @returns {Promise<string|null>} The cached response or null
@@ -184,17 +269,37 @@ async function getCachedResponse(userInput, conversationHistory = []) {
       return null;
     }
     
-    const cacheKey = generateResponseCacheKey(userInput, conversationHistory);
-    const cachedResponse = await redis.get(cacheKey);
+    // Try phonetic matching first
+    const phoneticCacheKey = generateResponseCacheKey(userInput, conversationHistory, true);
+    let cachedResponse = await redis.get(phoneticCacheKey);
     
     if (cachedResponse) {
-      logger.info('💾 [CACHE-HIT] Found cached AI response', {
+      logger.info('💾 [PHONETIC-CACHE-HIT] Found cached AI response via phonetic matching', {
         userInput: userInput.substring(0, 50),
-        cacheKey,
+        cacheKey: phoneticCacheKey,
         responseLength: cachedResponse.length
       });
       return cachedResponse;
     }
+    
+    // Fallback to exact matching if phonetic didn't match
+    const exactCacheKey = generateResponseCacheKey(userInput, conversationHistory, false);
+    cachedResponse = await redis.get(exactCacheKey);
+    
+    if (cachedResponse) {
+      logger.info('💾 [EXACT-CACHE-HIT] Found cached AI response via exact matching', {
+        userInput: userInput.substring(0, 50),
+        cacheKey: exactCacheKey,
+        responseLength: cachedResponse.length
+      });
+      return cachedResponse;
+    }
+    
+    logger.debug('💾 [CACHE-MISS] No cached response found', {
+      userInput: userInput.substring(0, 50),
+      phoneticKey: phoneticCacheKey.split(':').pop(),
+      exactKey: exactCacheKey.split(':').pop()
+    });
     
     return null;
   } catch (error) {
@@ -205,6 +310,7 @@ async function getCachedResponse(userInput, conversationHistory = []) {
 
 /**
  * Cache an AI response
+ * Stores both phonetic and exact cache keys for maximum hit rate
  * @param {string} userInput - The user's input text
  * @param {Array} conversationHistory - Recent conversation history
  * @param {string} response - The AI response to cache
@@ -223,15 +329,25 @@ async function setCachedResponse(userInput, conversationHistory, response, ttl =
       return;
     }
     
-    const cacheKey = generateResponseCacheKey(userInput, conversationHistory);
-    await redis.set(cacheKey, response, { ex: ttl });
+    const keysStored = [];
     
-    // Track the cache key for easier clearing later
-    await redis.sadd('response_cache_keys', cacheKey);
+    // Store phonetic cache key if applicable
+    if (shouldUsePhoneticCaching(userInput)) {
+      const phoneticCacheKey = generateResponseCacheKey(userInput, conversationHistory, true);
+      await redis.set(phoneticCacheKey, response, { ex: ttl });
+      await redis.sadd('response_cache_keys', phoneticCacheKey);
+      keysStored.push('phonetic');
+    }
+    
+    // Always store exact cache key as fallback
+    const exactCacheKey = generateResponseCacheKey(userInput, conversationHistory, false);
+    await redis.set(exactCacheKey, response, { ex: ttl });
+    await redis.sadd('response_cache_keys', exactCacheKey);
+    keysStored.push('exact');
     
     logger.info('💾 [CACHE-SET] Cached AI response', {
       userInput: userInput.substring(0, 50),
-      cacheKey,
+      keysStored: keysStored.join(', '),
       responseLength: response.length,
       ttl
     });

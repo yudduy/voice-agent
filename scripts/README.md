@@ -56,14 +56,6 @@ node scripts/setup-user.js +19713364433
 node scripts/setup-user.js +19713364433 "John Doe"
 ```
 
-### 🔧 Legacy Interactive Test
-```bash
-node scripts/interactive-voice-test.js [phone_number]
-```
-
-**Purpose**: Legacy full pipeline test (kept for backward compatibility)
-- Similar to voice-test.js but with different structure
-- May be removed in future versions
 
 ## Testing Workflow
 

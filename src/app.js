@@ -6,7 +6,6 @@ const express = require('express');
 const http = require('http'); // CRITICAL: Import http module for proper server creation
 const scheduler = require('./services/scheduler');
 const unifiedTwilioWebhooks = require('./webhooks/unifiedTwilioWebhooks');
-const audioWebhooks = require('./webhooks/audioWebhooks');
 const smsWebhook = require('./webhooks/smsWebhook');
 const { router: mediaStreamRouter, handleWebSocketUpgrade } = require('./webhooks/mediaStreamWebhook');
 const { processOnboardingQueue } = require('./services/smsHandler');
@@ -85,7 +84,6 @@ if (process.env.ENABLE_MEDIA_STREAMS === 'true') {
 }
 
 // Always mount these routes
-app.use('/api/calls/audio', audioWebhooks);
 app.use('/webhooks', smsWebhook);
 
 // Basic web interface for admin (optional)

@@ -181,14 +181,16 @@ const getResponse = async (userInput, callSid, userId) => {
       }
     }
     
-    const messages = await promptUtils.generatePersonalizedPrompt(contact, contextualizedHistory, userId);
+    const messages = promptUtils.generatePersonalizedPrompt(contact, contextualizedHistory, userId, true);
     
     logger.info('🧠 [LLM-INPUT] User said', { 
       callSid, 
       userId,
       userInput: userInput,
       inputLength: userInput.length,
-      conversationTurns: conversationHistory.length
+      conversationTurns: conversationHistory.length,
+      optimizedContextLength: messages.length,
+      contextOptimizationApplied: contextualizedHistory.length > 6
     });
     
     logger.debug('[getResponse] Calling OpenAI API', { 
@@ -358,14 +360,16 @@ const getResponseStream = async function* (userInput, callSid, userId) {
       }
     }
     
-    const messages = await promptUtils.generatePersonalizedPrompt(contact, contextualizedHistory, userId);
+    const messages = promptUtils.generatePersonalizedPrompt(contact, contextualizedHistory, userId, true);
     
     logger.info('🧠 [LLM-STREAM-INPUT] Starting streaming response', { 
       callSid, 
       userId,
       userInput: userInput,
       inputLength: userInput.length,
-      conversationTurns: conversationHistory.length
+      conversationTurns: conversationHistory.length,
+      optimizedContextLength: messages.length,
+      contextOptimizationApplied: contextualizedHistory.length > 6
     });
     
     // --- OpenAI Streaming API Call ---

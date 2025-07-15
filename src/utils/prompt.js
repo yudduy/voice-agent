@@ -19,16 +19,18 @@ const VERIES_GREETINGS = [
  * @param {Object} contact - The contact information
  * @param {Array} conversationHistory - Recent history for context
  * @param {string} userId - The user's ID
+ * @param {boolean} optimizeContext - Whether to apply context optimization for faster LLM processing
  * @returns {Array<object>} - A structured message array for the LLM
  */
-const generatePersonalizedPrompt = async (contact, conversationHistory = [], userId) => {
+const generatePersonalizedPrompt = (contact, conversationHistory = [], userId, optimizeContext = true) => {
   const name = contact.name && contact.name !== 'Guest User' ? contact.name.split(' ')[0] : 'there';
   
   const systemMessage = VERIES_PERSONA_PROMPT;
 
   // No additional task message - let the system prompt handle behavior
+  // Enable context optimization by default for faster LLM responses
   
-  return buildMessages(systemMessage, conversationHistory);
+  return buildMessages(systemMessage, conversationHistory, null, optimizeContext);
 };
 
 /**

@@ -39,7 +39,7 @@ const featureFlags = {
   
   // Logging and monitoring
   ENABLE_PERFORMANCE_LOGGING: process.env.FF_PERFORMANCE_LOGGING === 'true' || true,
-  LOG_LATENCY_DETAILS: process.env.FF_LOG_LATENCY_DETAILS === 'true' || false
+  LOG_LATENCY_DETAILS: process.env.FF_LOG_LATENCY_DETAILS === 'true' || true
 };
 
 // Validate feature flag combinations

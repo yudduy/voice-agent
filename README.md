@@ -4,7 +4,7 @@ A voice-first AI agent designed for outbound calling campaigns with dynamic pers
 
 * **Dynamic Personas**: Easily configurable personas for different campaigns (currently: "Ben" from Microsoft Support).
 * **Smart Call Logic**: Handles various call scenarios, user responses, and natural conversation flow.
-* **Voice Pipeline**: **Groq Whisper STT → OpenAI GPT-4o-mini → ElevenLabs TTS**
+* **Voice Pipeline**: **DeepGram Nova STT → OpenAI GPT-4.1-nano → ElevenLabs TTS**
 * **Storage**: Long-term memory in **Supabase Postgres**, short-term context in **Upstash Redis**
 * **Monitoring**: Comprehensive call/transcript logging with detailed state tracking
 * **Barge-in Protection**: Advanced interruption handling with grace periods to prevent false triggers
@@ -16,7 +16,7 @@ A voice-first AI agent designed for outbound calling campaigns with dynamic pers
 | Component | Technology | Purpose |
 |-----------|------------|---------|
 | **Speech-to-Text** | Groq Whisper v3 (primary) + Twilio STT (fallback) | High-accuracy transcription with recording |
-| **Conversation AI** | OpenAI GPT-4o-mini (150 tokens) | Dynamic and context-aware persona handling |
+| **Conversation AI** | OpenAI GPT-4.1-nano (150 tokens) | Dynamic and context-aware persona handling |
 | **Text-to-Speech** | ElevenLabs Flash v2.5 (primary) + Hyperbolic (fallback) + Twilio (final) | Premium voice synthesis optimized for speed |
 | **Telephony** | Twilio Voice API | Reliable call handling and audio streaming |
 | **Database** | Supabase Postgres | User profiles, call history, and conversation logs |

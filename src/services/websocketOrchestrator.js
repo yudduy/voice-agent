@@ -20,6 +20,8 @@ const connectionPool = require('./connectionPool');
 const ffmpegPool = require('./ffmpegPool');
 const audioCache = require('./audioCache');
 const textToSpeech = require('./textToSpeech');
+const ConversationCycleTracker = require('../utils/conversationCycleTracker');
+const sentenceDetector = require('../utils/sentenceCompletionDetector');
 
 
 class WebSocketOrchestrator extends EventEmitter {
@@ -30,7 +32,11 @@ class WebSocketOrchestrator extends EventEmitter {
     this.userId = initialUserId;
     
     // Start performance monitoring session
-    performanceMonitor.startSession(this.callSid); 
+    performanceMonitor.startSession(this.callSid);
+    
+    // Initialize conversation cycle tracker
+    this.cycleTracker = new ConversationCycleTracker(this.callSid);
+    this.currentCycleId = null; 
     
     this.twilioWs = null;
     this.deepgramWs = null;
@@ -75,6 +81,7 @@ class WebSocketOrchestrator extends EventEmitter {
     this.BARGE_IN_COOLDOWN = 600; // ms to wait after a barge-in before processing new input
     this.BARGE_IN_GRACE_PERIOD_MS = 400; // Grace period to prevent immediate barge-in
     this.speechEndTimer = null;
+    this.finalTranscriptTimer = null; // Timer for fallback final transcript processing
     this.ffmpegCommand = null;
     
     // KeepAlive management for Deepgram
@@ -406,6 +413,52 @@ class WebSocketOrchestrator extends EventEmitter {
               });
             }
             this.lastProcessedTranscript = transcript; // Store the latest final transcript
+            
+            // FIX: Process final transcript immediately with fallback timeout
+            // This ensures we don't rely solely on UtteranceEnd events which can be unreliable
+            
+            // Check if we should process immediately vs waiting for UtteranceEnd
+            const shouldProcessImmediately = (
+              transcript.length >= 8 || // Longer transcripts are more likely complete
+              /\b(yes|no|hello|help|stop|what|how|why|when|where|who)\b/i.test(transcript) || // Common complete words
+              /[.!?]$/.test(transcript) // Ends with punctuation
+            );
+            
+            if (shouldProcessImmediately) {
+              logger.info('Processing final transcript immediately - high confidence it\'s complete', {
+                callSid: this.callSid,
+                transcript,
+                reason: 'immediate_processing',
+                length: transcript.length
+              });
+              
+              // Process immediately without waiting
+              setImmediate(async () => {
+                await this.handleFinalTranscript(transcript);
+              });
+            } else {
+              logger.debug('Setting fallback timer for final transcript processing', {
+                callSid: this.callSid,
+                transcript,
+                fallbackDelayMs: 400
+              });
+              
+              // Set a fallback timer to process the transcript if UtteranceEnd doesn't arrive
+              if (this.finalTranscriptTimer) {
+                clearTimeout(this.finalTranscriptTimer);
+              }
+              
+              this.finalTranscriptTimer = setTimeout(async () => {
+                logger.info('Fallback timer triggered - processing final transcript without UtteranceEnd', {
+                  callSid: this.callSid,
+                  transcript,
+                  reason: 'UtteranceEnd_not_received'
+                });
+                
+                await this.handleFinalTranscript(transcript);
+                this.finalTranscriptTimer = null;
+              }, 400); // 400ms fallback delay (reduced from 500ms)
+            }
           }
         }
         
@@ -417,13 +470,35 @@ class WebSocketOrchestrator extends EventEmitter {
           });
           
           logger.debug('Deepgram UtteranceEnd detected', { callSid: this.callSid });
+          
+          // Clear timers
           if (this.speechEndTimer) {
             clearTimeout(this.speechEndTimer);
             this.speechEndTimer = null;
           }
+          
+          // Clear fallback timer since UtteranceEnd arrived
+          if (this.finalTranscriptTimer) {
+            clearTimeout(this.finalTranscriptTimer);
+            this.finalTranscriptTimer = null;
+            logger.debug('Cleared fallback timer - UtteranceEnd received', { callSid: this.callSid });
+          }
+          
           // Process the last known final transcript
           if (this.lastProcessedTranscript) {
-            await this.handleFinalTranscript(this.lastProcessedTranscript);
+            // Check if we're already processing this transcript to avoid duplicates
+            if (!this.processingLLM) {
+              logger.debug('UtteranceEnd processing final transcript', {
+                callSid: this.callSid,
+                transcript: this.lastProcessedTranscript
+              });
+              await this.handleFinalTranscript(this.lastProcessedTranscript);
+            } else {
+              logger.debug('Skipping UtteranceEnd processing - LLM already processing', {
+                callSid: this.callSid,
+                transcript: this.lastProcessedTranscript
+              });
+            }
           }
         }
 
@@ -480,6 +555,9 @@ class WebSocketOrchestrator extends EventEmitter {
       logger.debug('Ignoring speech start - in barge-in cooldown', { callSid: this.callSid });
       return;
     }
+    
+    // Start a new conversation cycle
+    this.currentCycleId = this.cycleTracker.startCycle();
 
     // Implement barge-in: stop current TTS if agent is speaking
     if (this.isSpeaking) {
@@ -503,6 +581,15 @@ class WebSocketOrchestrator extends EventEmitter {
         timeSinceAgentStarted: timeSinceSpeechStart
       });
 
+      // Track barge-in response time
+      const bargeInResponseTime = Date.now() - this.lastUserInputTime;
+      performanceMonitor.stageStart(this.callSid, 'barge-in-response');
+      performanceMonitor.stageComplete(this.callSid, 'barge-in-response', {
+        responseTimeMs: bargeInResponseTime,
+        agentWasSpeaking: this.lastSpokenText ? true : false,
+        streamingActive: this.isStreamingActive || false
+      });
+      
       this.stopFfmpeg();
       this.stopStreaming(); // Stop streaming pipeline if active
       this.stopSpeaking();
@@ -522,12 +609,26 @@ class WebSocketOrchestrator extends EventEmitter {
     }
 
     this.logStateTransition(this.callState, 'USER_SPEAKING', 'User started speaking');
+    this.isUserSpeaking = true;
+    this.lastUserInputTime = Date.now();
+    
+    // Start STT latency measurement
+    performanceMonitor.stageStart(this.callSid, 'stt');
   }
 
   /**
    * Handles final transcript with proper turn management
    */
   async handleFinalTranscript(transcript) {
+    // Mark user speech end and STT completion in cycle tracker
+    if (this.currentCycleId) {
+      this.cycleTracker.markUserSpeechEnd(this.currentCycleId, transcript);
+      this.cycleTracker.markSTTComplete(this.currentCycleId);
+    }
+    
+    // Complete STT latency measurement
+    performanceMonitor.stageComplete(this.callSid, 'stt', { transcriptLength: transcript.length });
+
     const processingStart = Date.now();
     const timeSinceLastInput = processingStart - this.lastUserInputTime;
     
@@ -539,12 +640,26 @@ class WebSocketOrchestrator extends EventEmitter {
       systemBusy: this.isSpeaking || this.processingLLM
     });
     
-    // Prevent duplicate processing
-    if (transcript === this.lastProcessedTranscript && (timeSinceLastInput < 2000)) {
-      logger.debug('Ignoring duplicate transcript', { 
+    // Prevent duplicate processing - but be more intelligent about it
+    // Only block if it's the exact same transcript AND was recently processed AND LLM is not busy
+    if (transcript === this.lastProcessedTranscript && 
+        timeSinceLastInput < 1500 && 
+        !this.processingLLM) {
+      logger.debug('Ignoring potential duplicate transcript', { 
         callSid: this.callSid, 
         transcript,
-        timeSinceLastInput
+        timeSinceLastInput,
+        reason: 'recent_duplicate'
+      });
+      return;
+    }
+    
+    // If LLM is already processing the same transcript, definitely skip
+    if (this.processingLLM && transcript === this.lastProcessedTranscript) {
+      logger.debug('Ignoring duplicate - LLM already processing this transcript', {
+        callSid: this.callSid,
+        transcript,
+        reason: 'llm_processing_duplicate'
       });
       return;
     }
@@ -596,6 +711,7 @@ class WebSocketOrchestrator extends EventEmitter {
       this.pendingUserInputs.push({
         transcript,
         timestamp: processingStart,
+        queuedAt: Date.now(),
         callState: this.callState
       });
       return;
@@ -605,9 +721,19 @@ class WebSocketOrchestrator extends EventEmitter {
     this.lastProcessedTranscript = transcript;
     this.lastUserInputTime = processingStart;
     
+    // Clear the user speaking state to transition properly
+    this.isUserSpeaking = false;
+    
     this.logTranscriptEvent('TRANSCRIPT_ACCEPTED_FOR_LLM', transcript, {
       processingDecision: 'ACCEPT',
-      queuedForLLM: true
+      queuedForLLM: true,
+      stateTransition: `${this.callState} → LLM_PROCESSING`
+    });
+    
+    // Ensure we transition to the correct state
+    this.logStateTransition(this.callState, 'LLM_PROCESSING', 'Final transcript accepted', {
+      transcriptLength: transcript.length,
+      timeSinceLastInput
     });
     
     await this.processWithLLM(transcript);
@@ -706,9 +832,21 @@ class WebSocketOrchestrator extends EventEmitter {
         await this.streamLLMToTTS(userInput, correlationId, llmStartTime);
       } else {
         // Use legacy pipeline
+        performanceMonitor.stageStart(this.callSid, 'llm');
         const response = await conversationService.getResponse(userInput, this.callSid, this.userId);
         const llmEndTime = Date.now();
         const llmProcessingTime = llmEndTime - llmStartTime;
+        
+        // Mark LLM completion in cycle tracker (legacy doesn't have first token)
+        if (this.currentCycleId) {
+          this.cycleTracker.markLLMComplete(this.currentCycleId, response?.text || '');
+        }
+        
+        performanceMonitor.stageComplete(this.callSid, 'llm', {
+          processingTimeMs: llmProcessingTime,
+          responseLength: response?.text?.length || 0,
+          method: 'legacy'
+        });
         
         logger.info(`AI response: "${response.text}"`, { 
           callSid: this.callSid,
@@ -770,6 +908,20 @@ class WebSocketOrchestrator extends EventEmitter {
         
         const nextInput = this.pendingUserInputs.shift();
         if (nextInput && !this.isSpeaking) {
+          // Track queue time
+          const queueTime = Date.now() - (nextInput.queuedAt || nextInput.timestamp);
+          performanceMonitor.stageStart(this.callSid, 'queue-time');
+          performanceMonitor.stageComplete(this.callSid, 'queue-time', {
+            queueTimeMs: queueTime,
+            queuedInputs: this.pendingUserInputs.length + 1
+          });
+          
+          logger.debug('Processing queued input', {
+            callSid: this.callSid,
+            queueTimeMs: queueTime,
+            transcript: nextInput.transcript
+          });
+          
           setTimeout(() => this.processWithLLM(nextInput.transcript), 100);
         }
       }
@@ -884,8 +1036,19 @@ class WebSocketOrchestrator extends EventEmitter {
         ffmpegProcessStdinWritable: ffmpegProcess.stdin?.writable
       });
       
+      // Track first TTS audio
+      let firstTTSAudioReceived = false;
+      
       // Handle audio from ElevenLabs → FFmpeg → Twilio
       elevenLabsStream.on('audio', (audioBuffer) => {
+        // Mark first TTS audio received
+        if (!firstTTSAudioReceived) {
+          firstTTSAudioReceived = true;
+          if (this.currentCycleId) {
+            this.cycleTracker.markTTSFirstAudio(this.currentCycleId);
+          }
+        }
+        
         if (!this.isSpeaking || this.isUserSpeaking) {
           logger.debug('Dropping audio chunk due to interruption', { streamId });
           return;
@@ -906,6 +1069,28 @@ class WebSocketOrchestrator extends EventEmitter {
         }
         
         audioChunksSent++;
+        
+        // Track first audio chunk timing for end-to-end measurement
+        if (audioChunksSent === 1) {
+          const endToEndTime = Date.now() - startTime;
+          
+          // Mark first audio sent in cycle tracker
+          if (this.currentCycleId) {
+            this.cycleTracker.markFirstAudioSent(this.currentCycleId);
+          }
+          
+          performanceMonitor.stageStart(this.callSid, 'first-audio-chunk');
+          performanceMonitor.stageComplete(this.callSid, 'first-audio-chunk', {
+            endToEndTimeMs: endToEndTime,
+            fromUserInput: true
+          });
+          
+          logger.info('First audio chunk sent to caller', {
+            callSid: this.callSid,
+            streamId,
+            endToEndTimeMs: endToEndTime
+          });
+        }
         
         if (this.twilioWs?.readyState === WebSocket.OPEN) {
           this.twilioWs.send(JSON.stringify({
@@ -940,7 +1125,20 @@ class WebSocketOrchestrator extends EventEmitter {
       });
       
       // Get LLM response stream
+      performanceMonitor.stageStart(this.callSid, 'llm');
+      performanceMonitor.stageStart(this.callSid, 'llm-first-token');
+      let firstTokenReceived = false;
+      let earlyCutoffTriggered = false;
       const llmStream = conversationService.getResponseStream(userInput, this.callSid, this.userId);
+      
+      // Determine if early cutoff should be enabled for this context
+      const enableEarlyCutoff = sentenceDetector.shouldEnableEarlyCutoffForContext(userInput);
+      
+      logger.debug('LLM streaming configuration', {
+        streamId,
+        enableEarlyCutoff,
+        userInputPreview: userInput.substring(0, 50)
+      });
       
       // Process LLM chunks and send to TTS
       for await (const textChunk of llmStream) {
@@ -962,6 +1160,61 @@ class WebSocketOrchestrator extends EventEmitter {
         
         chunksReceived++;
         fullResponseText += textChunk;
+        
+        // Track first token timing
+        if (!firstTokenReceived && textChunk.trim()) {
+          firstTokenReceived = true;
+          
+          // Mark first token in cycle tracker
+          if (this.currentCycleId) {
+            this.cycleTracker.markLLMFirstToken(this.currentCycleId);
+          }
+          
+          performanceMonitor.stageComplete(this.callSid, 'llm-first-token', {
+            timeToFirstToken: Date.now() - startTime,
+            firstChunk: textChunk.trim()
+          });
+        }
+        
+        // Check for early cutoff after receiving text chunk
+        if (enableEarlyCutoff && !earlyCutoffTriggered) {
+          const cutoffDecision = sentenceDetector.shouldCutOffGeneration(
+            fullResponseText, 
+            textChunk, 
+            {
+              persona: 'microsoft_support',
+              minLength: 15,
+              maxLength: 150,
+              enableEarlyCutoff: true
+            }
+          );
+          
+          if (cutoffDecision.shouldCutOff) {
+            earlyCutoffTriggered = true;
+            logger.info('🚀 Early cutoff triggered - stopping LLM generation', {
+              streamId,
+              reason: cutoffDecision.reason,
+              type: cutoffDecision.type,
+              confidence: cutoffDecision.confidence,
+              textLength: fullResponseText.length,
+              textPreview: fullResponseText.substring(0, 100),
+              chunksProcessed: chunksReceived
+            });
+            
+            // Send the current chunk to TTS, then break
+            const shouldFlush = /[.!?]\s*$/.test(textChunk);
+            elevenLabsStream.sendText(textChunk, shouldFlush);
+            
+            if (shouldFlush) {
+              logger.debug('Final flush on early cutoff', {
+                streamId,
+                textChunk: textChunk.trim()
+              });
+            }
+            
+            break; // Exit the streaming loop early
+          }
+        }
         
         // Send to ElevenLabs with flush on sentence boundaries
         const shouldFlush = /[.!?]\s*$/.test(textChunk);
@@ -1041,6 +1294,24 @@ class WebSocketOrchestrator extends EventEmitter {
       
       const endTime = Date.now();
       
+      // Mark LLM completion in cycle tracker
+      if (this.currentCycleId) {
+        this.cycleTracker.markLLMComplete(this.currentCycleId, fullResponseText);
+        this.cycleTracker.completeCycle(this.currentCycleId, audioChunksSent);
+        this.currentCycleId = null; // Reset for next cycle
+      }
+      
+      // Complete LLM performance measurement
+      performanceMonitor.stageComplete(this.callSid, 'llm', {
+        processingTimeMs: endTime - startTime,
+        responseLength: fullResponseText.length,
+        method: 'streaming',
+        chunksReceived,
+        firstTokenTime: firstTokenReceived ? 'measured' : 'no_tokens',
+        earlyCutoffTriggered,
+        earlyCutoffEnabled: enableEarlyCutoff
+      });
+      
       logger.info('Streaming pipeline completed', {
         callSid: this.callSid,
         streamId,
@@ -1049,7 +1320,13 @@ class WebSocketOrchestrator extends EventEmitter {
         responseLength: fullResponseText.length,
         textChunks: chunksReceived,
         audioChunks: audioChunksSent,
-        shouldHangup
+        shouldHangup,
+        earlyCutoffTriggered,
+        optimizations: {
+          earlyCutoff: enableEarlyCutoff,
+          phoneticCaching: 'enabled',
+          elevenLabsLatencyOpt: 'enabled'
+        }
       });
       
       // Store complete utterance
@@ -1258,8 +1535,24 @@ class WebSocketOrchestrator extends EventEmitter {
         transcodedStream.on('data', (chunk) => {
           if (!firstChunkTime) {
             firstChunkTime = Date.now();
+            const endToEndTime = firstChunkTime - ttsStartTime;
+            
+            // Mark first audio sent in cycle tracker
+            if (this.currentCycleId) {
+              this.cycleTracker.markFirstAudioSent(this.currentCycleId);
+            }
+            
+            // Track end-to-end latency performance
+            performanceMonitor.stageStart(this.callSid, 'first-audio-chunk');
+            performanceMonitor.stageComplete(this.callSid, 'first-audio-chunk', {
+              endToEndTimeMs: endToEndTime,
+              transcodingTimeMs: firstChunkTime - transcodingStartTime,
+              fromCache: false
+            });
+            
             this.logAudioEvent('FIRST_AUDIO_CHUNK_SENT', {
               transcodingTimeMs: firstChunkTime - transcodingStartTime,
+              endToEndTimeMs: endToEndTime,
               chunkSize: chunk.length,
               correlationId
             });
@@ -1326,6 +1619,13 @@ class WebSocketOrchestrator extends EventEmitter {
         }
         
         logger.debug('Audio playback transcoding completed', { callSid: this.callSid });
+        
+        // Complete conversation cycle for legacy pipeline
+        if (this.currentCycleId) {
+          this.cycleTracker.completeCycle(this.currentCycleId, chunkCount);
+          this.currentCycleId = null; // Reset for next cycle
+        }
+        
         const oldState = this.isSpeaking;
         this.isSpeaking = false;
         
@@ -1437,6 +1737,22 @@ class WebSocketOrchestrator extends EventEmitter {
       const chunk = mulawBuffer.slice(offset, offset + chunkSize);
       offset += chunk.length;
       chunkCount++;
+      
+      // Track first audio chunk timing for cached audio
+      if (chunkCount === 1) {
+        const endToEndTime = Date.now() - startTime;
+        performanceMonitor.stageStart(this.callSid, 'first-audio-chunk');
+        performanceMonitor.stageComplete(this.callSid, 'first-audio-chunk', {
+          endToEndTimeMs: endToEndTime,
+          fromCache: true
+        });
+        
+        logger.info('First cached audio chunk sent to caller', {
+          callSid: this.callSid,
+          correlationId,
+          endToEndTimeMs: endToEndTime
+        });
+      }
       
       if (this.twilioWs?.readyState === WebSocket.OPEN) {
         this.twilioWs.send(JSON.stringify({
@@ -1557,6 +1873,16 @@ class WebSocketOrchestrator extends EventEmitter {
     // Stop KeepAlive timer
     this._stopKeepAlive();
     
+    // Clear any pending timers
+    if (this.speechEndTimer) {
+      clearTimeout(this.speechEndTimer);
+      this.speechEndTimer = null;
+    }
+    if (this.finalTranscriptTimer) {
+      clearTimeout(this.finalTranscriptTimer);
+      this.finalTranscriptTimer = null;
+    }
+    
     // Release connections back to pool if using pooling
     if (featureFlags.ENABLE_WEBSOCKET_POOLING) {
       if (this.deepgramWs) {
@@ -1575,8 +1901,18 @@ class WebSocketOrchestrator extends EventEmitter {
     
     this.twilioWs?.close();
     
+    // Log final conversation cycle summary
+    if (this.cycleTracker) {
+      this.cycleTracker.logFinalSummary();
+    }
+    
     // Complete performance monitoring session
     performanceMonitor.completeSession(this.callSid);
+    
+    // Generate comprehensive latency report periodically (10% of calls)
+    if (Math.random() < 0.1) {
+      performanceMonitor.logLatencyReport();
+    }
     
     this.emit('call_ended');
   }

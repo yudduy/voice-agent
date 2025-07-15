@@ -11,8 +11,15 @@ class PerformanceMonitor {
     this.metrics = {
       stt: [],
       llm: [],
+      'llm-first-token': [],
       tts: [],
       transcode: [],
+      'first-audio-chunk': [],
+      'queue-time': [],
+      'barge-in-response': [],
+      'deepgram-connect': [],
+      'elevenlabs-connect': [],
+      'ffmpeg-setup': [],
       total: [],
       cacheHits: 0,
       cacheMisses: 0,
@@ -242,6 +249,116 @@ class PerformanceMonitor {
     const sorted = arr.slice().sort((a, b) => a - b);
     const index = Math.ceil((p / 100) * sorted.length) - 1;
     return sorted[index];
+  }
+
+  /**
+   * Generate detailed latency analysis report
+   */
+  getDetailedLatencyReport() {
+    const stats = this.getStats();
+    const report = {
+      timestamp: new Date().toISOString(),
+      summary: {
+        totalSessions: this.sessionMetrics.size,
+        lastResetTime: new Date(this.lastResetTime).toISOString(),
+        circuitBreakerFailures: this.circuitBreakerFailures
+      },
+      stages: {},
+      analysis: {}
+    };
+
+    // Add detailed stage analysis
+    const stageOrder = ['stt', 'llm-first-token', 'llm', 'tts', 'transcode', 'first-audio-chunk', 'queue-time', 'barge-in-response'];
+    
+    for (const stage of stageOrder) {
+      if (stats[stage]) {
+        report.stages[stage] = {
+          ...stats[stage],
+          measurements: this.metrics[stage].length
+        };
+      }
+    }
+
+    // Add connection setup metrics
+    const connectionStages = ['deepgram-connect', 'elevenlabs-connect', 'ffmpeg-setup'];
+    report.connectionSetup = {};
+    for (const stage of connectionStages) {
+      if (stats[stage]) {
+        report.connectionSetup[stage] = stats[stage];
+      }
+    }
+
+    // Performance analysis
+    if (stats.total && stats.total.avg) {
+      report.analysis.endToEndLatency = {
+        average: stats.total.avg,
+        target: '<2000ms',
+        status: stats.total.avg < 2000 ? 'GOOD' : stats.total.avg < 3000 ? 'ACCEPTABLE' : 'POOR'
+      };
+    }
+
+    if (stats['first-audio-chunk'] && stats['first-audio-chunk'].avg) {
+      report.analysis.timeToFirstAudio = {
+        average: stats['first-audio-chunk'].avg,
+        target: '<1500ms',
+        status: stats['first-audio-chunk'].avg < 1500 ? 'GOOD' : stats['first-audio-chunk'].avg < 2500 ? 'ACCEPTABLE' : 'POOR'
+      };
+    }
+
+    if (stats.llm && stats.llm.avg) {
+      report.analysis.llmLatency = {
+        average: stats.llm.avg,
+        target: '<800ms',
+        status: stats.llm.avg < 800 ? 'GOOD' : stats.llm.avg < 1200 ? 'ACCEPTABLE' : 'POOR'
+      };
+    }
+
+    if (stats.tts && stats.tts.avg) {
+      report.analysis.ttsLatency = {
+        average: stats.tts.avg,
+        target: '<500ms',
+        status: stats.tts.avg < 500 ? 'GOOD' : stats.tts.avg < 800 ? 'ACCEPTABLE' : 'POOR'
+      };
+    }
+
+    // Cache performance
+    if (stats.cacheHitRate !== undefined) {
+      report.analysis.cachePerformance = {
+        hitRate: Math.round(stats.cacheHitRate * 100) / 100,
+        target: '>70%',
+        status: stats.cacheHitRate > 70 ? 'GOOD' : stats.cacheHitRate > 50 ? 'ACCEPTABLE' : 'POOR',
+        totalRequests: this.metrics.cacheHits + this.metrics.cacheMisses
+      };
+    }
+
+    return report;
+  }
+
+  /**
+   * Log comprehensive latency report
+   */
+  logLatencyReport() {
+    const report = this.getDetailedLatencyReport();
+    
+    logger.info('=== VOICE PIPELINE LATENCY ANALYSIS ===');
+    logger.info('Performance Report', report);
+    
+    // Log key findings
+    if (report.analysis.endToEndLatency) {
+      logger.info(`End-to-End Latency: ${Math.round(report.analysis.endToEndLatency.average)}ms (${report.analysis.endToEndLatency.status})`);
+    }
+    
+    if (report.analysis.timeToFirstAudio) {
+      logger.info(`Time to First Audio: ${Math.round(report.analysis.timeToFirstAudio.average)}ms (${report.analysis.timeToFirstAudio.status})`);
+    }
+    
+    if (report.analysis.cachePerformance) {
+      logger.info(`Cache Hit Rate: ${report.analysis.cachePerformance.hitRate}% (${report.analysis.cachePerformance.status})`);
+    }
+    
+    logger.info('=== END LATENCY ANALYSIS ===');
+    
+    return report;
   }
 }
 
